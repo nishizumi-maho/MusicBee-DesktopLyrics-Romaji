@@ -90,6 +90,7 @@ $zip = Join-Path $dist "MusicBee-DesktopLyrics-Romaji-$version.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path "$stage\*" -DestinationPath $zip
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-"$hash  $(Split-Path $zip -Leaf)" | Set-Content "$zip.sha256" -Encoding ASCII
+# LF line ending, so `sha256sum -c` accepts the file as well.
+[IO.File]::WriteAllText("$zip.sha256", "$hash  $(Split-Path $zip -Leaf)`n", [Text.Encoding]::ASCII)
 Write-Host "Created $zip"
 Write-Host "SHA256 $hash"
