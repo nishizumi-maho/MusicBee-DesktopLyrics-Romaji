@@ -3,6 +3,13 @@
 All versions are based on Desktop Lyrics 1.10.1 by Charlie Jiang
 (<https://github.com/cqjjjzr/MusicBee-DesktopLyrics>).
 
+## 1.14.1 — 2026-10-18
+
+- The update window now shows the release notes as plain text. It used to show the raw Markdown
+  (`###`, `**`, image links).
+- After an automatic install, the update window now says which version was installed. It used to
+  still say "is available" and list the old version.
+
 ## 1.14.0 — 2026-10-18
 
 First public release of the fork.

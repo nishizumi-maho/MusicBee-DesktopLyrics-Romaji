@@ -8,7 +8,7 @@ hosted on GitHub; if so, upload the image to the post instead.
 It would also be polite to let CharlieJiang know, by a reply in the original Desktop Lyrics topic,
 a forum PM, or an issue on <https://github.com/cqjjjzr/MusicBee-DesktopLyrics>.
 
-**Subject:** `Desktop Lyrics (romaji fork) 1.14.0 – romaji for Japanese lyrics, smooth transitions`
+**Subject:** `Desktop Lyrics (romaji fork) 1.14.1 – romaji for Japanese lyrics, smooth transitions`
 
 ```bbcode
 [size=14pt][b]Desktop Lyrics – romaji fork[/b][/size]

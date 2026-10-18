@@ -3,6 +3,7 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -11,7 +12,7 @@ namespace MusicBeePlugin
     public class FrmUpdate : Form
     {
         private readonly Updater.ReleaseInfo _release;
-        private readonly Label _status;
+        private readonly Label _status, _heading;
         private readonly Button _btnUpdate, _btnPage, _btnSkip, _btnLater;
 
         /// <summary>Raised when the user picks "Skip this version".</summary>
@@ -36,7 +37,7 @@ namespace MusicBeePlugin
             Padding = new Padding(12);
             Font = SystemFonts.MessageBoxFont;
 
-            var heading = new Label
+            var heading = _heading = new Label
             {
                 Dock = DockStyle.Top, AutoSize = false, Height = 44,
                 Text = $"Desktop Lyrics (romaji fork) {release.Version} is available.\r\nYou have version {Updater.CurrentVersion}."
@@ -44,7 +45,7 @@ namespace MusicBeePlugin
             var notes = new TextBox
             {
                 Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-                Text = string.IsNullOrWhiteSpace(release.Notes) ? "(no release notes)" : release.Notes.Replace("\r\n", "\n").Replace("\n", "\r\n"),
+                Text = string.IsNullOrWhiteSpace(release.Notes) ? "(no release notes)" : MarkdownToText(release.Notes),
                 BackColor = SystemColors.Window
             };
             _status = new Label { Dock = DockStyle.Bottom, AutoSize = false, Height = 40, TextAlign = ContentAlignment.MiddleLeft };
@@ -77,6 +78,21 @@ namespace MusicBeePlugin
             _btnUpdate.Click += (s, e) => StartInstall();
 
             if (alreadyInstalled) ShowInstalled();
+        }
+
+        /// <summary>Release notes are GitHub Markdown; strip the syntax a plain text box would show literally.</summary>
+        internal static string MarkdownToText(string markdown)
+        {
+            var text = markdown.Replace("\r\n", "\n");
+            text = Regex.Replace(text, @"^[ \t]*!\[[^\]]*\]\([^)]*\)[ \t]*\n?", "", RegexOptions.Multiline);   // images
+            text = Regex.Replace(text, @"\[([^\]]+)\]\([^)]*\)", "$1");                                        // links -> their text
+            text = Regex.Replace(text, @"^#{1,6}[ \t]*", "", RegexOptions.Multiline);                          // headings
+            text = Regex.Replace(text, @"^([ \t]*)[-*+][ \t]+", "$1• ", RegexOptions.Multiline);          // bullets
+            text = Regex.Replace(text, @"(\*\*|__)(.+?)\1", "$2");                                             // bold
+            text = Regex.Replace(text, @"(?<![\w*])[*_]([^*_\n]+)[*_](?![\w*])", "$1");                       // italics
+            text = text.Replace("`", "");
+            text = Regex.Replace(text, @"\n{3,}", "\n\n").Trim();
+            return text.Replace("\n", "\r\n");
         }
 
         private void OpenReleasePage()
@@ -116,6 +132,7 @@ namespace MusicBeePlugin
         private void ShowInstalled()
         {
             Text = "Desktop Lyrics updated";
+            _heading.Text = $"Desktop Lyrics (romaji fork) was updated to {_release.Version}.\r\nWhat's new:";
             _status.ForeColor = Color.DarkGreen;
             _status.Text = $"Version {_release.Version} is installed. Restart MusicBee to start using it.";
             _btnUpdate.Visible = false;
