@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>mb_DesktopLyrics</AssemblyName>
+    <RootNamespace>MusicBeePlugin</RootNamespace>
+    <UseWindowsForms>true</UseWindowsForms>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <PackageReference Include="Cyotek.Windows.Forms.ColorPicker" Version="1.7.2" />
+    <!-- Romaji engine. RomajiCore.dll and LibNMeCab.dll are copied to the output folder, and the IPAdic
+         dictionary to IpaDic\; build.ps1 packs all three into the release zip. -->
+    <ProjectReference Include="..\..\external\RomajiCore\RomajiCore.csproj" />
+    <PackageReference Include="LibNMeCab" Version="0.10.2" />
+    <PackageReference Include="LibNMeCab.IpaDicBin" Version="0.10.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Used by the updater to unpack release zips. -->
+    <Reference Include="System.IO.Compression" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <!-- RomajiCore: Japanese-to-romaji engine (MIT, Copyright 2026 nishizumi-maho). The same sources are
+       used by the Romaji Lyrics plugin, so both plugins can share one RomajiCore.dll. build.ps1 copies
+       the built DLL into the release package. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>RomajiCore</AssemblyName>
+    <Version>1.0.0</Version>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="LibNMeCab" Version="0.10.2" />
+  </ItemGroup>
+</Project>

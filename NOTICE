@@ -1,0 +1,22 @@
+Desktop Lyrics for MusicBee (romaji fork)
+https://github.com/nishizumi-maho/MusicBee-DesktopLyrics-Romaji
+
+This product is a modified version of "MusicBee-DesktopLyrics" by Charlie Jiang
+(https://github.com/cqjjjzr/MusicBee-DesktopLyrics), licensed under the Apache License 2.0.
+
+Modifications Copyright 2026 nishizumi-maho, also licensed under the Apache License 2.0:
+romaji second line (bundled romaji engine) with an on/off switch, lyrics opacity,
+second-line colour, single box background, smooth line transitions with an adjustable
+frame rate, right-click menu, display of untimed lyrics, update check against this
+fork's GitHub releases, bug fixes, and packaging without embedded assemblies.
+Changed files carry a notice at the top.
+
+Third-party components in the release package (details and licence texts in
+THIRD-PARTY-NOTICES.md and the licenses folder):
+- RomajiCore (MIT License), Copyright 2026 nishizumi-maho - source in external/RomajiCore
+- NMeCab / MeCab (LGPL-2.1; used under the LGPL-2.1 option, shipped unmodified as a
+  separate DLL so it can be replaced) - https://github.com/komutan/NMeCab
+- IPADIC binary dictionary (Copyright 2000-2003 Nara Institute of Science and Technology;
+  see the IPADIC licence text) - redistributed as packaged by NMeCab
+- Newtonsoft.Json (MIT License) - https://www.newtonsoft.com/json
+- Cyotek.Windows.Forms.ColorPicker (MIT License) - https://github.com/cyotek/Cyotek.Windows.Forms.ColorPicker
