@@ -1,6 +1,7 @@
 ﻿// Modified by nishizumi-maho, 2026 (Desktop Lyrics romaji fork): Shows romaji (bundled RomajiCore engine) as the second line of Japanese lyrics, with an on/off switch.
 // Original work: Copyright Charlie Jiang, licensed under the Apache License 2.0.
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -147,10 +148,33 @@ namespace MusicBeePlugin
             if (lyrics == null || !Romanizer.IsJapaneseText(lyrics.Entries.Select(e => e.LyricLine1))) return;
             foreach (var entry in lyrics.Entries)
             {
+                if (entry.Segments != null)
+                {
+                    // Word-timed line: romanize segment by segment so the romaji line lights in step.
+                    entry.Segments2 = BuildRomajiSegments(entry.Segments, Romanizer.ToRomaji);
+                    if (entry.Segments2.Count > 0) entry.LyricLine2 = string.Concat(entry.Segments2.Select(s => s.Text));
+                    continue;
+                }
                 var romaji = Romanizer.ToRomaji(entry.LyricLine1);
                 if (!string.IsNullOrEmpty(romaji)) entry.LyricLine2 = romaji;
             }
             lyrics.HasTranslation = true;
+        }
+
+        /// <summary>One romaji piece per segment, with that segment's times; pieces are separated by a
+        /// space (carried by the piece before it). Segments with no romaji (punctuation) are skipped.</summary>
+        public static List<LyricParser.WordSegment> BuildRomajiSegments(List<LyricParser.WordSegment> segments,
+                                                                         Func<string, string> toRomaji)
+        {
+            var pieces = new List<LyricParser.WordSegment>();
+            foreach (var s in segments)
+            {
+                var r = (toRomaji(s.Text) ?? "").Trim();
+                if (r.Length == 0) continue;
+                if (pieces.Count > 0) pieces[pieces.Count - 1].Text += " ";
+                pieces.Add(new LyricParser.WordSegment { Text = r, StartMs = s.StartMs, EndMs = s.EndMs });
+            }
+            return pieces;
         }
 
         public class LyricView
