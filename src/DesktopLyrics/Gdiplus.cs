@@ -64,8 +64,10 @@ namespace MusicBeePlugin
                 GdiplusPInvoke.ReleaseDC(IntPtr.Zero, screenDc);
                 if (hBitmap != IntPtr.Zero)
                 {
+                    // Deselect before deleting: DeleteObject fails on a bitmap still selected into a DC,
+                    // which leaked one GDI bitmap per frame and eventually broke GDI+ in the whole host.
+                    if (oldBitmap != IntPtr.Zero) GdiplusPInvoke.SelectObject(memDc, oldBitmap);
                     GdiplusPInvoke.DeleteObject(hBitmap);
-                    GdiplusPInvoke.SelectObject(memDc, oldBitmap);
                 }
                 GdiplusPInvoke.DeleteDC(memDc);
             }

@@ -79,9 +79,12 @@ namespace MusicBeePlugin
                 currentEntry = entries[entries.Count - 1];
             }
 
-            if (_lyrics.HasTranslation || nextEntry == null || !NextLineWhenNoTranslation)
-                return new LyricView(currentEntry.LyricLine1, currentEntry.LyricLine2);
-            return new LyricView(currentEntry.LyricLine1, nextEntry.LyricLine1);
+            var view = _lyrics.HasTranslation || nextEntry == null || !NextLineWhenNoTranslation
+                ? new LyricView(currentEntry.LyricLine1, currentEntry.LyricLine2) { Segments2 = currentEntry.Segments2 }
+                : new LyricView(currentEntry.LyricLine1, nextEntry.LyricLine1);
+            view.Segments = currentEntry.Segments;
+            view.OffsetMs = _lyrics.Offset;
+            return view;
         }
 
         // Romaji support comes from RomajiCore.dll, which ships next to this plugin. If someone deletes it
@@ -182,6 +185,12 @@ namespace MusicBeePlugin
             // C# version < 8.0, can't use nullable reference feature....
             public string LyricLine1 { get; set; } // Nullable
             public string LyricLine2 { get; set; } // Nullable
+            /// <summary>Word timing of line 1; null for line-timed lyrics.</summary>
+            public List<LyricParser.WordSegment> Segments { get; set; }
+            /// <summary>Word timing of line 2 when it is the romaji of line 1; null otherwise.</summary>
+            public List<LyricParser.WordSegment> Segments2 { get; set; }
+            /// <summary>The lyrics' [offset:], added to the player position before timing words.</summary>
+            public double OffsetMs { get; set; }
 
             public LyricView(string lyricLine1, string lyricLine2)
             {

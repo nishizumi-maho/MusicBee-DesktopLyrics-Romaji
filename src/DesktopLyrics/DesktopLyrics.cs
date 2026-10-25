@@ -307,6 +307,9 @@ namespace MusicBeePlugin
             {
                 if (_frmLyrics == null) return;
                 var entry = _lyricsCtrl.UpdateLyrics(!_settings.HideWhenUnavailable);
+                // Feeds the word highlight's clock; FrmLyrics marshals this to its own thread.
+                _frmLyrics.SyncPlayback(_mbApiInterface.Player_GetPosition(),
+                                        _mbApiInterface.Player_GetPlayState() == PlayState.Playing);
                 if (entry == null && _line1 != "")
                 {
                     _line1 = "";
@@ -316,7 +319,7 @@ namespace MusicBeePlugin
 
                 if (entry == null) return;
                 if (!force && entry.LyricLine1 == _line1 && entry.LyricLine2 == _line2) return;
-                _frmLyrics.BeginInvoke(new Action<string, string>((line1, line2) => _frmLyrics.UpdateLyrics(line1, line2)), entry.LyricLine1, entry.LyricLine2);
+                _frmLyrics.UpdateLyrics(entry);   // marshals to the form's thread
                 _line1 = entry.LyricLine1;
                 _line2 = entry.LyricLine2;
             }

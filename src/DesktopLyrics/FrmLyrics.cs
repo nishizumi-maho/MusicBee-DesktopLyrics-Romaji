@@ -2,6 +2,7 @@
 // romaji switch and update check in that menu, and smooth-scroll line transitions.
 // Original work: Copyright Charlie Jiang, licensed under the Apache License 2.0.
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -15,6 +16,18 @@ namespace MusicBeePlugin
     public partial class FrmLyrics : Form
     {
         private SettingsObj _settings;
+
+        // Public entry points are called from the plugin's timer and from MusicBee notification
+        // threads. Every bitmap here belongs to the UI thread, so those calls are re-posted to it;
+        // touching the blocks from two threads is what raised "Object is currently in use elsewhere".
+        private bool PostToUiThread(Action action)
+        {
+            if (!InvokeRequired) return false;
+            try { BeginInvoke(action); }
+            catch (InvalidOperationException) { }   // handle not created yet, or the form is closing
+            return true;
+        }
+
         public FrmLyrics(SettingsObj settings)
         {
             _settings = settings;
@@ -130,7 +143,13 @@ namespace MusicBeePlugin
 
         private void OnAnimTick(object sender, EventArgs e)
         {
-            if (!_animating || _blockCurrent == null || _blockIncoming == null)
+            if (!_animating)
+            {
+                // At rest the same clock drives the word highlight, if there is one to drive.
+                if (!_highlightOn || PresentHighlightFrame() || !_clock.Playing) StopAnimationClock();
+                return;
+            }
+            if (_blockCurrent == null || _blockIncoming == null)
             {
                 StopAnimation();
                 return;
@@ -157,10 +176,13 @@ namespace MusicBeePlugin
             _blockCurrent?.Dispose();
             _blockCurrent = _blockIncoming;
             _blockIncoming = null;
+            ReplaceWordBlock(_wordBlockIncoming);
+            _wordBlockIncoming = null;
             _hasContent = _incomingHasContent;
             if (_blockCurrent != null)
                 PresentFrame(null, 0, _blockCurrent, 0, _blockCurrent.Height);
             ApplyVisibility();
+            StartHighlight();
         }
 
         private void StopAnimation()
@@ -169,6 +191,8 @@ namespace MusicBeePlugin
             _animating = false;
             _blockIncoming?.Dispose();
             _blockIncoming = null;
+            _wordBlockIncoming?.Dispose();
+            _wordBlockIncoming = null;
             _animWatch.Reset();
         }
 
@@ -258,6 +282,9 @@ namespace MusicBeePlugin
                 _blockCurrent = null;
                 _blockIncoming?.Dispose();
                 _blockIncoming = null;
+                ReplaceWordBlock(null);
+                _wordBlockIncoming?.Dispose();
+                _wordBlockIncoming = null;
             };
         }
 
@@ -282,10 +309,16 @@ namespace MusicBeePlugin
                 return;
             }
             PresentFrame(null, 0, _blockCurrent, 0, _blockCurrent.Height);
+            if (_highlightOn)
+            {
+                _lastX1 = _lastX2 = -1;   // the plain frame just replaced the highlight: paint it again
+                PresentHighlightFrame();
+            }
         }
 
         public void UpdateFromSettings(SettingsObj settings)
         {
+            if (PostToUiThread(() => UpdateFromSettings(settings))) return;
             _settings = settings;
             LyricsRenderer.UpdateFromSettings(settings, Width);
 
@@ -301,6 +334,7 @@ namespace MusicBeePlugin
         /// <summary>Called when the player stops/starts, honouring the "Hide lyrics when stopped" option.</summary>
         public void SetPlayStateVisible(bool visible)
         {
+            if (PostToUiThread(() => SetPlayStateVisible(visible))) return;
             _playStateAllows = visible || !_settings.AutoHide;
             ApplyVisibility();
         }
@@ -317,52 +351,74 @@ namespace MusicBeePlugin
         private void Redraw()
         {
             StopAnimation();
-            var block = RenderBlock();
+            var block = RenderBlock(out var word);
             if (block == null) return;
 
             _blockCurrent?.Dispose();
             _blockCurrent = block;
+            ReplaceWordBlock(word);
             _hasContent = HasContent();
 
             PresentFrame(null, 0, block, 0, block.Height);
             ApplyVisibility();
+            StartHighlight();
         }
 
         public void Clear()
         {
+            if (PostToUiThread(Clear)) return;
             if (_line1 == null && _line2 == null) return;
             if (string.IsNullOrEmpty(_line1) && _line2 == null) return;
             _line1 = "";
             _line2 = null;
+            _segs1 = _segs2 = null;
             TransitionToNewContent();
         }
 
-        public void UpdateLyrics(string line1, string line2)
+        public void UpdateLyrics(LyricsController.LyricView view)
         {
+            if (PostToUiThread(() => UpdateLyrics(view))) return;
             // The plugin force-refreshes on play-state changes; re-animating identical content would
             // make the lyrics jump for no reason.
-            if (line1 == _line1 && line2 == _line2) return;
-            _line1 = line1;
-            _line2 = line2;
+            if (view.LyricLine1 == _line1 && view.LyricLine2 == _line2 && view.Segments == _segs1) return;
+            _line1 = view.LyricLine1;
+            _line2 = view.LyricLine2;
+            _segs1 = view.Segments;
+            _segs2 = view.Segments2;
+            _offsetMs = view.OffsetMs;
             TransitionToNewContent();
         }
 
         private bool HasContent() => !string.IsNullOrEmpty(_line1) || !string.IsNullOrEmpty(_line2);
 
-        private Bitmap RenderBlock()
+        /// <summary>Renders the block for the current lines. When the line has word timing and the
+        /// highlight is on, <paramref name="word"/> receives the highlight layer and character edges.</summary>
+        private Bitmap RenderBlock(out RenderedBlock word)
         {
+            var withHighlight = _settings.WordHighlight && _segs1 != null && !string.IsNullOrEmpty(_line1);
             using (var g = CreateGraphics())
             {
-                if (_line2 == null)
-                    return LyricsRenderer.Render1LineLyrics(_line1 ?? "", g);
-                return LyricsRenderer.Render2LineLyrics(_line1 ?? "", _line2, g);
+                var block = _line2 == null
+                    ? LyricsRenderer.Render1LineBlock(_line1 ?? "", g, withHighlight)
+                    : LyricsRenderer.Render2LineBlock(_line1 ?? "", _line2, g, withHighlight);
+                var bitmap = block.DetachBase();
+                if (withHighlight)
+                {
+                    word = block;
+                }
+                else
+                {
+                    word = null;
+                    block.Dispose();
+                }
+                return bitmap;
             }
         }
 
         private void TransitionToNewContent()
         {
             var incomingHasContent = HasContent();
-            var incoming = RenderBlock();
+            var incoming = RenderBlock(out var word);
             if (incoming == null) return;
 
             // Nothing to slide from, or the option is off: paint the new block straight away.
@@ -371,9 +427,11 @@ namespace MusicBeePlugin
                 StopAnimation();
                 _blockCurrent?.Dispose();
                 _blockCurrent = incoming;
+                ReplaceWordBlock(word);
                 _hasContent = incomingHasContent;
                 PresentFrame(null, 0, incoming, 0, incoming.Height);
                 ApplyVisibility();
+                StartHighlight();
                 return;
             }
 
@@ -390,7 +448,10 @@ namespace MusicBeePlugin
             }
             StopAnimation();
 
+            // The outgoing line slides away plain; its highlight layer is no longer needed.
+            ReplaceWordBlock(null);
             _blockIncoming = incoming;
+            _wordBlockIncoming = word;
             _incomingHasContent = incomingHasContent;
             _animTravel = Math.Max(_blockCurrent.Height, incoming.Height);
             _animDuration = Math.Max(AnimMinDuration, Math.Min(AnimMaxDuration, _settings.SmoothScrollDuration));
@@ -406,6 +467,95 @@ namespace MusicBeePlugin
             _animating = true;
             StartAnimationClock();
             OnAnimTick(this, EventArgs.Empty);   // paint the first frame without waiting for a callback
+        }
+
+        // ---- word-by-word highlight ----
+        //
+        // When the line on screen has word timing, _wordBlock holds a same-size layer with the text in
+        // the highlight colour plus every character's x. Each frame lays that layer over the plain block,
+        // clipped at the x the singer has reached, so the colour runs through each word as it is sung.
+        // The multimedia clock that drives transitions also drives this; it stops when the line is fully
+        // lit or playback pauses, so a still line costs nothing.
+        private List<LyricParser.WordSegment> _segs1, _segs2;
+        private double _offsetMs;
+        private RenderedBlock _wordBlock, _wordBlockIncoming;
+        private readonly PlaybackClock _clock = new PlaybackClock();
+        private bool _highlightOn;
+        private float _lastX1 = -1, _lastX2 = -1;
+
+        private void ReplaceWordBlock(RenderedBlock word)
+        {
+            if (!ReferenceEquals(_wordBlock, word)) _wordBlock?.Dispose();
+            _wordBlock = word;
+            _highlightOn = false;
+        }
+
+        private void StartHighlight()
+        {
+            _lastX1 = _lastX2 = -1;
+            _highlightOn = _wordBlock != null && _settings.WordHighlight && _blockCurrent != null;
+            if (!_highlightOn) return;
+            var done = PresentHighlightFrame();
+            if (!done && _clock.Playing) StartAnimationClock();
+        }
+
+        /// <summary>Called every 100 ms with MusicBee's position. Pause, play and seeks show at once.</summary>
+        public void SyncPlayback(double positionMs, bool playing)
+        {
+            if (PostToUiThread(() => SyncPlayback(positionMs, playing))) return;
+            var wasPlaying = _clock.Playing;
+            _clock.Sync(positionMs, playing);
+            if (!_highlightOn || _animating) return;
+            var done = PresentHighlightFrame();
+            if (playing && !done && (!wasPlaying || _mmTimerId == 0 && !_animTimer.Enabled)) StartAnimationClock();
+            else if (!playing || done) StopAnimationClock();
+        }
+
+        /// <summary>Paints the highlight for the current playback time. Returns true when every word of
+        /// the line is lit (nothing left to animate).</summary>
+        private bool PresentHighlightFrame()
+        {
+            if (_wordBlock?.Highlight == null || _blockCurrent == null || _segs1 == null) return true;
+            var t = _clock.NowMs() + _offsetMs;
+            var lit1 = WordTimeline.LitChars(_segs1, t);
+            var x1 = _wordBlock.LitX(0, lit1);
+            var done = lit1 >= _wordBlock.CharEdges[0].Length;
+            var x2 = 0f;
+            if (_segs2 != null && _wordBlock.CharEdges.Length > 1)
+            {
+                var lit2 = WordTimeline.LitChars(_segs2, t);
+                x2 = _wordBlock.LitX(1, lit2);
+                done &= lit2 >= _wordBlock.CharEdges[1].Length;
+            }
+            if (Math.Abs(x1 - _lastX1) < 0.5f && Math.Abs(x2 - _lastX2) < 0.5f) return done;
+            _lastX1 = x1;
+            _lastX2 = x2;
+
+            var w = _blockCurrent.Width;
+            var h = _blockCurrent.Height;
+            using (var frame = new Bitmap(w, h))
+            {
+                using (var g = Graphics.FromImage(frame))
+                {
+                    g.CompositingMode = CompositingMode.SourceOver;
+                    g.DrawImage(_blockCurrent, 0, 0, w, h);
+                    DrawLit(g, 0, x1, w, h);
+                    if (x2 > 0) DrawLit(g, 1, x2, w, h);
+                }
+                if (Width != w) Width = w;
+                if (Height != h) Height = h;
+                GdiplusHelper.SetBitmap(frame, TextAlpha, Handle, Left, Top, Width, Height);
+            }
+            return done;
+        }
+
+        private void DrawLit(Graphics g, int line, float x, int w, int h)
+        {
+            if (x <= 0) return;
+            var r = _wordBlock.LineRects[line];
+            g.SetClip(new RectangleF(0, r.Top, x, r.Height));
+            g.DrawImage(_wordBlock.Highlight, 0, 0, w, h);
+            g.ResetClip();
         }
 
         private byte TextAlpha => (byte)(Math.Max(10, Math.Min(100, _settings.TextOpacity)) * 255 / 100);
