@@ -176,6 +176,8 @@ namespace MusicBeePlugin
             _blockCurrent?.Dispose();
             _blockCurrent = _blockIncoming;
             _blockIncoming = null;
+            _boxCurrent = _boxIncoming;
+            _boxIncoming = null;
             ReplaceWordBlock(_wordBlockIncoming);
             _wordBlockIncoming = null;
             _hasContent = _incomingHasContent;
@@ -191,6 +193,7 @@ namespace MusicBeePlugin
             _animating = false;
             _blockIncoming?.Dispose();
             _blockIncoming = null;
+            _boxIncoming = null;
             _wordBlockIncoming?.Dispose();
             _wordBlockIncoming = null;
             _animWatch.Reset();
@@ -207,11 +210,16 @@ namespace MusicBeePlugin
             var t = _animDuration <= 0 ? 1.0 : _animWatch.Elapsed.TotalMilliseconds / _animDuration;
             var p = Math.Min(1.0, 1.0 - Math.Pow(1.0 - t, 3.0));
             var snap = new Bitmap(_blockCurrent.Width, _animTravel);
+            var outY = (int)Math.Round(-_animTravel * p);
+            var inY = (int)Math.Round(_animTravel * (1.0 - p));
             using (var g = Graphics.FromImage(snap))
             {
                 g.CompositingMode = CompositingMode.SourceOver;
-                g.DrawImage(_blockCurrent, 0, (int)Math.Round(-_animTravel * p), _blockCurrent.Width, _blockCurrent.Height);
-                g.DrawImage(_blockIncoming, 0, (int)Math.Round(_animTravel * (1.0 - p)), _blockIncoming.Width, _blockIncoming.Height);
+                // The snapshot becomes a plain block: bake the box that is on screen into it.
+                var box = Union(Shifted(_boxCurrent, outY), Shifted(_boxIncoming, inY));
+                if (box.HasValue) LyricsRenderer.FillBox(g, RectangleF.Intersect(box.Value, new RectangleF(0, 0, snap.Width, snap.Height)));
+                g.DrawImage(_blockCurrent, 0, outY, _blockCurrent.Width, _blockCurrent.Height);
+                g.DrawImage(_blockIncoming, 0, inY, _blockIncoming.Width, _blockIncoming.Height);
             }
             return snap;
         }
@@ -229,8 +237,16 @@ namespace MusicBeePlugin
                 using (var g = Graphics.FromImage(frame))
                 {
                     g.CompositingMode = CompositingMode.SourceOver;
+                    // One box behind everything on screen: while two blocks slide, it spans both, so the
+                    // background stays continuous instead of two boxes with a gap between them.
+                    var box = Shifted(outgoing != null ? _boxCurrent : null, outgoingY);
+                    box = Union(box, Shifted(incoming != null ? (outgoing != null ? _boxIncoming : _boxCurrent) : null, incomingY));
+                    if (box.HasValue) LyricsRenderer.FillBox(g, RectangleF.Intersect(box.Value, new RectangleF(0, 0, width, viewHeight)));
                     if (outgoing != null) g.DrawImage(outgoing, 0, outgoingY, outgoing.Width, outgoing.Height);
                     if (incoming != null) g.DrawImage(incoming, 0, incomingY, incoming.Width, incoming.Height);
+                    // The incoming line is lit while it slides in, so its first words are not late.
+                    var word = outgoing != null ? _wordBlockIncoming : _wordBlock;
+                    if (incoming != null && word != null && _settings.WordHighlight) DrawHighlight(g, word, incomingY, width, incoming.Height);
                 }
 
                 if (Width != width) Width = width;
@@ -351,11 +367,12 @@ namespace MusicBeePlugin
         private void Redraw()
         {
             StopAnimation();
-            var block = RenderBlock(out var word);
+            var block = RenderBlock(out var word, out var box);
             if (block == null) return;
 
             _blockCurrent?.Dispose();
             _blockCurrent = block;
+            _boxCurrent = box;
             ReplaceWordBlock(word);
             _hasContent = HasContent();
 
@@ -393,14 +410,16 @@ namespace MusicBeePlugin
 
         /// <summary>Renders the block for the current lines. When the line has word timing and the
         /// highlight is on, <paramref name="word"/> receives the highlight layer and character edges.</summary>
-        private Bitmap RenderBlock(out RenderedBlock word)
+        private Bitmap RenderBlock(out RenderedBlock word, out RectangleF? box)
         {
             var withHighlight = _settings.WordHighlight && _segs1 != null && !string.IsNullOrEmpty(_line1);
             using (var g = CreateGraphics())
             {
+                // The box is drawn per frame by PresentFrame, not baked into the block.
                 var block = _line2 == null
-                    ? LyricsRenderer.Render1LineBlock(_line1 ?? "", g, withHighlight)
-                    : LyricsRenderer.Render2LineBlock(_line1 ?? "", _line2, g, withHighlight);
+                    ? LyricsRenderer.Render1LineBlock(_line1 ?? "", g, withHighlight, bakeBox: false)
+                    : LyricsRenderer.Render2LineBlock(_line1 ?? "", _line2, g, withHighlight, bakeBox: false);
+                box = block.BoxRect;
                 var bitmap = block.DetachBase();
                 if (withHighlight)
                 {
@@ -418,7 +437,7 @@ namespace MusicBeePlugin
         private void TransitionToNewContent()
         {
             var incomingHasContent = HasContent();
-            var incoming = RenderBlock(out var word);
+            var incoming = RenderBlock(out var word, out var box);
             if (incoming == null) return;
 
             // Nothing to slide from, or the option is off: paint the new block straight away.
@@ -427,6 +446,7 @@ namespace MusicBeePlugin
                 StopAnimation();
                 _blockCurrent?.Dispose();
                 _blockCurrent = incoming;
+                _boxCurrent = box;
                 ReplaceWordBlock(word);
                 _hasContent = incomingHasContent;
                 PresentFrame(null, 0, incoming, 0, incoming.Height);
@@ -444,6 +464,7 @@ namespace MusicBeePlugin
                 {
                     _blockCurrent?.Dispose();
                     _blockCurrent = snapshot;
+                    _boxCurrent = null;   // the snapshot already has the box baked in
                 }
             }
             StopAnimation();
@@ -451,6 +472,7 @@ namespace MusicBeePlugin
             // The outgoing line slides away plain; its highlight layer is no longer needed.
             ReplaceWordBlock(null);
             _blockIncoming = incoming;
+            _boxIncoming = box;
             _wordBlockIncoming = word;
             _incomingHasContent = incomingHasContent;
             _animTravel = Math.Max(_blockCurrent.Height, incoming.Height);
@@ -516,47 +538,61 @@ namespace MusicBeePlugin
         private bool PresentHighlightFrame()
         {
             if (_wordBlock?.Highlight == null || _blockCurrent == null || _segs1 == null) return true;
-            var t = _clock.NowMs() + _offsetMs;
-            var lit1 = WordTimeline.LitChars(_segs1, t);
-            var x1 = _wordBlock.LitX(0, lit1);
-            var done = lit1 >= _wordBlock.CharEdges[0].Length;
-            var x2 = 0f;
-            if (_segs2 != null && _wordBlock.CharEdges.Length > 1)
-            {
-                var lit2 = WordTimeline.LitChars(_segs2, t);
-                x2 = _wordBlock.LitX(1, lit2);
-                done &= lit2 >= _wordBlock.CharEdges[1].Length;
-            }
+            var (x1, x2, done) = LitPositions(_wordBlock);
             if (Math.Abs(x1 - _lastX1) < 0.5f && Math.Abs(x2 - _lastX2) < 0.5f) return done;
             _lastX1 = x1;
             _lastX2 = x2;
-
-            var w = _blockCurrent.Width;
-            var h = _blockCurrent.Height;
-            using (var frame = new Bitmap(w, h))
-            {
-                using (var g = Graphics.FromImage(frame))
-                {
-                    g.CompositingMode = CompositingMode.SourceOver;
-                    g.DrawImage(_blockCurrent, 0, 0, w, h);
-                    DrawLit(g, 0, x1, w, h);
-                    if (x2 > 0) DrawLit(g, 1, x2, w, h);
-                }
-                if (Width != w) Width = w;
-                if (Height != h) Height = h;
-                GdiplusHelper.SetBitmap(frame, TextAlpha, Handle, Left, Top, Width, Height);
-            }
+            PresentFrame(null, 0, _blockCurrent, 0, _blockCurrent.Height);   // draws box, text and highlight
             return done;
         }
 
-        private void DrawLit(Graphics g, int line, float x, int w, int h)
+        /// <summary>Lit x on line 1 and line 2 (romaji) for the current playback time.</summary>
+        private (float x1, float x2, bool done) LitPositions(RenderedBlock word)
+        {
+            var t = _clock.NowMs() + _offsetMs;
+            var lit1 = _segs1 == null ? 0 : WordTimeline.LitChars(_segs1, t);
+            var x1 = word.LitX(0, lit1);
+            var done = lit1 >= word.CharEdges[0].Length;
+            var x2 = 0f;
+            if (_segs2 != null && word.CharEdges.Length > 1)
+            {
+                var lit2 = WordTimeline.LitChars(_segs2, t);
+                x2 = word.LitX(1, lit2);
+                done &= lit2 >= word.CharEdges[1].Length;
+            }
+            return (x1, x2, done);
+        }
+
+        private void DrawHighlight(Graphics g, RenderedBlock word, int offsetY, int w, int h)
+        {
+            if (word.Highlight == null || _segs1 == null) return;
+            var (x1, x2, _) = LitPositions(word);
+            DrawLit(g, word, 0, x1, offsetY, w, h);
+            if (word.LineRects.Length > 1) DrawLit(g, word, 1, x2, offsetY, w, h);
+        }
+
+        private static void DrawLit(Graphics g, RenderedBlock word, int line, float x, int offsetY, int w, int h)
         {
             if (x <= 0) return;
-            var r = _wordBlock.LineRects[line];
-            g.SetClip(new RectangleF(0, r.Top, x, r.Height));
-            g.DrawImage(_wordBlock.Highlight, 0, 0, w, h);
+            var r = word.LineRects[line];
+            g.SetClip(new RectangleF(0, r.Top + offsetY, x, r.Height));
+            g.DrawImage(word.Highlight, 0, offsetY, w, h);
             g.ResetClip();
         }
+
+        // ---- single-box background ----
+        private RectangleF? _boxCurrent, _boxIncoming;
+
+        private static RectangleF? Shifted(RectangleF? box, int dy)
+        {
+            if (!box.HasValue) return null;
+            var r = box.Value;
+            r.Offset(0, dy);
+            return r;
+        }
+
+        private static RectangleF? Union(RectangleF? a, RectangleF? b) =>
+            !a.HasValue ? b : !b.HasValue ? a : RectangleF.Union(a.Value, b.Value);
 
         private byte TextAlpha => (byte)(Math.Max(10, Math.Min(100, _settings.TextOpacity)) * 255 / 100);
 

@@ -86,17 +86,33 @@ namespace MusicBeePlugin
             using (var block = Render2LineBlock(line1, line2, dc, false)) return block.DetachBase();
         }
 
-        public static RenderedBlock Render1LineBlock(string line1, IDeviceContext dc, bool withHighlight) =>
-            RenderBlock(new[] { line1 }, new[] { _mainFont }, dc, withHighlight);
+        /// <param name="bakeBox">With the single-box background on: true draws the box into the bitmap
+        /// (as before); false only reports it in <see cref="RenderedBlock.BoxRect"/>, so the window can draw
+        /// one continuous box behind two blocks while they slide.</param>
+        public static RenderedBlock Render1LineBlock(string line1, IDeviceContext dc, bool withHighlight, bool bakeBox = true) =>
+            RenderBlock(new[] { line1 }, new[] { _mainFont }, dc, withHighlight, bakeBox);
 
-        public static RenderedBlock Render2LineBlock(string line1, string line2, IDeviceContext dc, bool withHighlight) =>
-            RenderBlock(new[] { line1, line2 }, new[] { _mainFont, _subFont }, dc, withHighlight);
+        public static RenderedBlock Render2LineBlock(string line1, string line2, IDeviceContext dc, bool withHighlight, bool bakeBox = true) =>
+            RenderBlock(new[] { line1, line2 }, new[] { _mainFont, _subFont }, dc, withHighlight, bakeBox);
+
+        /// <summary>Draws the single-box background (rounded, background opacity) at <paramref name="box"/>.</summary>
+        public static void FillBox(Graphics g, RectangleF box)
+        {
+            if (_backgroundOpacity <= 0 || box.Width <= 0 || box.Height <= 0) return;
+            var smoothing = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var path = RoundedRect(box, 12 * (_dpi / 96f)))
+            using (var brush = new SolidBrush(Color.FromArgb(_backgroundOpacity, 0, 0, 0)))
+                g.FillPath(brush, path);
+            g.SmoothingMode = smoothing;
+        }
 
         /// <summary>Base block exactly as before; optionally a same-size highlight layer holding only the
         /// text in the highlight colour (no background, no shadow), plus each character's right edge so
         /// the window can reveal the layer up to the sung position.</summary>
-        private static RenderedBlock RenderBlock(string[] texts, Font[] fonts, IDeviceContext dc, bool withHighlight)
+        private static RenderedBlock RenderBlock(string[] texts, Font[] fonts, IDeviceContext dc, bool withHighlight, bool bakeBox)
         {
+            RectangleF? boxRect = null;
             var n = texts.Length;
             var baseLines = new Bitmap[n];
             var hiLines = withHighlight ? new Bitmap[n] : null;
@@ -117,7 +133,7 @@ namespace MusicBeePlugin
                 float offsetY = 0;
                 if (_boxBackground)
                 {
-                    baseBitmap = ComposeInBox(baseLines, tops, bounds);
+                    baseBitmap = ComposeInBox(baseLines, tops, bounds, bakeBox, out boxRect);
                     offsetY = BoxPadV;
                 }
                 else if (n == 1)
@@ -151,7 +167,7 @@ namespace MusicBeePlugin
                     using (var g = Graphics.FromImage(highlight))
                         for (var i = 0; i < n; i++) g.DrawImage(hiLines[i], new PointF(0, rects[i].Top));
                 }
-                return new RenderedBlock(baseBitmap, highlight, rects, edges, starts);
+                return new RenderedBlock(baseBitmap, highlight, rects, edges, starts) { BoxRect = boxRect };
             }
             finally
             {
@@ -163,8 +179,9 @@ namespace MusicBeePlugin
         private static float BoxPadV => 14 * (_dpi / 96f);
 
         // One rounded box behind all lines, with extra room around the text for comfortable reading.
-        private static Bitmap ComposeInBox(Bitmap[] lines, float[] tops, RectangleF[] textBounds)
+        private static Bitmap ComposeInBox(Bitmap[] lines, float[] tops, RectangleF[] textBounds, bool bakeBox, out RectangleF? boxRect)
         {
+            boxRect = null;
             var scale = _dpi / 96f;
             var padH = 28 * scale;
             var padV = BoxPadV;
@@ -187,9 +204,8 @@ namespace MusicBeePlugin
                 {
                     var box = new RectangleF(union.Left - padH, union.Top, union.Width + padH * 2, union.Height + padV * 2);
                     box.Intersect(new RectangleF(0, 0, bitmap.Width, bitmap.Height));
-                    using (var path = RoundedRect(box, 12 * scale))
-                    using (var brush = new SolidBrush(Color.FromArgb(_backgroundOpacity, 0, 0, 0)))
-                        g.FillPath(brush, path);
+                    boxRect = box;
+                    if (bakeBox) FillBox(g, box);
                 }
                 for (var i = 0; i < lines.Length; i++) g.DrawImage(lines[i], new PointF(0, tops[i] + padV));
             }

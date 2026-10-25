@@ -65,6 +65,38 @@ namespace DesktopLyrics.Tests
         }
 
         [Fact]
+        public void BoxIsReportedInsteadOfBakedWhenAsked()
+        {
+            var s = SettingsObj.GenerateDefault();
+            s.BoxBackground = true;
+            s.BackgroundOpacity = 200;
+            LyricsRenderer.SetDpi(96);
+            LyricsRenderer.UpdateFromSettings(s, 1200);
+            using (var bmp = new Bitmap(10, 10))
+            using (var g = Graphics.FromImage(bmp))
+            using (var b = LyricsRenderer.Render1LineBlock("eu vou", g, false, bakeBox: false))
+            {
+                Assert.True(b.BoxRect.HasValue);
+                var box = b.BoxRect.Value;
+                // Inside the box but left of the text: nothing baked, the window draws the box itself.
+                Assert.Equal(0, b.Base.GetPixel((int)box.Left + 3, (int)(box.Top + box.Height / 2)).A);
+            }
+            using (var bmp = new Bitmap(10, 10))
+            using (var g = Graphics.FromImage(bmp))
+            using (var baked = LyricsRenderer.Render1LineBlock("eu vou", g, false, bakeBox: true))
+            {
+                var box = baked.BoxRect.Value;
+                Assert.True(baked.Base.GetPixel((int)box.Left + 3, (int)(box.Top + box.Height / 2)).A > 0);
+            }
+        }
+
+        [Fact]
+        public void NoBoxModeReportsNoBox()
+        {
+            using (var b = Render(false, "eu vou", null)) Assert.False(b.BoxRect.HasValue);
+        }
+
+        [Fact]
         public void OldEntryPointsStillReturnTheBaseBitmap()
         {
             var s = SettingsObj.GenerateDefault();

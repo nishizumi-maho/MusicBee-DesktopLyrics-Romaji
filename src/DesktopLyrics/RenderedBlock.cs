@@ -14,6 +14,8 @@ namespace MusicBeePlugin
         public float[][] CharEdges { get; }
         /// <summary>Left edge of the first character of each line (lines are usually centred).</summary>
         public float[] LineStartX { get; }
+        /// <summary>Where the single-box background goes (block coordinates); null when that option is off.</summary>
+        public RectangleF? BoxRect { get; set; }
 
         public RenderedBlock(Bitmap @base, Bitmap highlight, RectangleF[] lineRects, float[][] charEdges, float[] lineStartX)
         {
