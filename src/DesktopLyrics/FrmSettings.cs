@@ -320,6 +320,8 @@ namespace MusicBeePlugin
         public int SmoothScrollFps = 60;        // animation frame rate
         public bool CheckForUpdates = true;     // look for new GitHub releases at startup and every 12 h
         public bool AutoInstallUpdates;         // install them without asking first
+        public bool WordHighlight = true;       // fill words as they are sung (enhanced LRC with word timing)
+        public Color HighlightColor = Color.FromArgb(0x50, 0xE6, 0xF0);
         public string SkippedVersion;           // release tag the user chose to skip
         public int PosY = -1;
         public int PosX = -1;
