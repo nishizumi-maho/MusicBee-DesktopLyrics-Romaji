@@ -350,6 +350,8 @@ namespace MusicBeePlugin
         public bool AutoInstallUpdates;         // install them without asking first
         public bool WordHighlight = true;       // fill words as they are sung (enhanced LRC with word timing)
         public Color HighlightColor = Color.FromArgb(0x50, 0xE6, 0xF0);
+        public int KaraokeX = -1, KaraokeY = -1, KaraokeW = -1, KaraokeH = -1;   // karaoke window bounds
+        public bool KaraokeFullscreen;
         public string SkippedVersion;           // release tag the user chose to skip
         public int PosY = -1;
         public int PosX = -1;

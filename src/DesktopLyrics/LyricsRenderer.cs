@@ -252,7 +252,7 @@ namespace MusicBeePlugin
                     stringPath.AddString(lyric, font.FontFamily, (int)font.Style, fontEmSize, initialRect, Format);
                     var bounds = stringPath.GetBounds();
                     textBounds = bounds;
-                    if (!highlightLayer) startX = MeasureCharEdges(g, lyric, font, fontEmSize, initialRect, charEdges);
+                    if (!highlightLayer) startX = MeasureCharEdges(g, lyric, font.FontFamily, font.Style, fontEmSize, initialRect, Format, charEdges);
 
                     if (highlightLayer)
                     {
@@ -301,12 +301,14 @@ namespace MusicBeePlugin
 
         /// <summary>Right edge of every character, in the same layout as the GraphicsPath text (same
         /// format, rectangle and pixel em size). GDI+ measures at most 32 ranges per call.</summary>
-        private static float MeasureCharEdges(Graphics g, string lyric, Font font, float emSizePx, RectangleF rect, float[] edges)
+        /// <summary>Also used by the karaoke window, with its own format. Returns the first character's left.</summary>
+        internal static float MeasureCharEdges(Graphics g, string lyric, FontFamily family, FontStyle style, float emSizePx,
+                                               RectangleF rect, StringFormat format, float[] edges)
         {
             if (lyric.Length == 0) return 0;
             var startX = float.NaN;
-            using (var pxFont = new Font(font.FontFamily, emSizePx, font.Style, GraphicsUnit.Pixel))
-            using (var fmt = (StringFormat)Format.Clone())
+            using (var pxFont = new Font(family, emSizePx, style, GraphicsUnit.Pixel))
+            using (var fmt = (StringFormat)format.Clone())
             {
                 for (var start = 0; start < lyric.Length; start += 32)
                 {

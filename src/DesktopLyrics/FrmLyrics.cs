@@ -638,6 +638,9 @@ namespace MusicBeePlugin
         /// <summary>Raised with the new state when the user toggles "Show romaji".</summary>
         public event EventHandler<bool> RomajiToggled;
 
+        /// <summary>Raised when the user picks "Open karaoke window" from the right-click menu.</summary>
+        public event EventHandler KaraokeRequested;
+
         /// <summary>Raised when the user picks "Check for updates..." from the right-click menu.</summary>
         public event EventHandler UpdateCheckRequested;
 
@@ -656,6 +659,7 @@ namespace MusicBeePlugin
             {
                 var menu = new ContextMenuStrip();
                 menu.Items.Add("Desktop Lyrics settings...", null, (s, a) => SettingsRequested?.Invoke(this, EventArgs.Empty));
+                menu.Items.Add("Open karaoke window", null, (s, a) => KaraokeRequested?.Invoke(this, EventArgs.Empty));
                 var romaji = RomajiStateProvider?.Invoke();
                 if (romaji.HasValue)
                 {

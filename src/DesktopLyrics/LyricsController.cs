@@ -22,6 +22,10 @@ namespace MusicBeePlugin
             _interface = @interface;
         }
 
+        /// <summary>The parsed lyrics of the playing track (with romaji applied), for the karaoke window.
+        /// Replaced by a new object whenever the lyrics or the romaji switch change.</summary>
+        public LyricParser.Lyrics CurrentLyrics => _lyrics;
+
         public LyricView UpdateLyrics(bool useGeneratedWhenUnavailable)
         {
             // TODO passively change?

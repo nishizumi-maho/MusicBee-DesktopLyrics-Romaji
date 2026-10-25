@@ -31,6 +31,7 @@ namespace MusicBeePlugin
         // Customed
         private volatile SettingsObj _settings;
         private volatile FrmLyrics _frmLyrics;
+        private volatile FrmKaraoke _frmKaraoke;
         private Timer _timer;
         private LyricsController _lyricsCtrl;
         private readonly object _lock = new object();
@@ -83,7 +84,11 @@ namespace MusicBeePlugin
         {
             if (_settings == null) _settings = SettingsObj.GenerateDefault();
             var settingsForm = new FrmSettings(_settings, _lyricsCtrl.GetRomajiSetting, _lyricsCtrl.SetRomajiSetting);
-            settingsForm.SettingsChanged += (sender, settings) => _frmLyrics?.UpdateFromSettings(settings);
+            settingsForm.SettingsChanged += (sender, settings) =>
+            {
+                _frmLyrics?.UpdateFromSettings(settings);
+                _frmKaraoke?.UpdateFromSettings(settings);
+            };
             settingsForm.UpdateCheckRequested += (sender, args) => CheckForUpdatesAsync(manual: true);
             settingsForm.ShowDialog();
             ApplyUpdateSchedule();
@@ -122,6 +127,13 @@ namespace MusicBeePlugin
                 frm?.Hide();
                 _frmLyrics = null;
             }));
+            // Closing the karaoke window stores its bounds in the settings, so do it before saving them.
+            var karaoke = _frmKaraoke;
+            if (karaoke != null && !karaoke.IsDisposed)
+            {
+                try { karaoke.Invoke(new Action(karaoke.Close)); }
+                catch (InvalidOperationException) { }
+            }
             SaveSettings(_settings);
         }
         
@@ -234,6 +246,8 @@ namespace MusicBeePlugin
                 ToggleLyrics);
             menuItemSlot[0] = menuItem;
             menuItem.Checked = !_settings.HideOnStartup;
+            _mbApiInterface.MB_AddMenuItem("mnuView/Desktop Lyrics Karaoke", "Open the karaoke lyrics window.",
+                                           (s, a) => OpenKaraoke());
             return;
 
             void ToggleLyrics(object sender, EventArgs args)
@@ -278,6 +292,7 @@ namespace MusicBeePlugin
             _frmLyrics.RomajiStateProvider = _lyricsCtrl.GetRomajiSetting;
             _frmLyrics.RomajiToggled += (s, on) => _lyricsCtrl.SetRomajiSetting(on);
             _frmLyrics.UpdateCheckRequested += (s, e) => CheckForUpdatesAsync(manual: true);
+            _frmLyrics.KaraokeRequested += (s, e) => OpenKaraoke();
             _frmLyrics.Show();
             try
             {
@@ -288,6 +303,45 @@ namespace MusicBeePlugin
                 _mbApiInterface.MB_Trace(e.ToString());
             }
         }
+        /// <summary>Opens the karaoke window, or brings it to the front if it is already open. Created on
+        /// MusicBee's UI thread, like the lyrics window.</summary>
+        private void OpenKaraoke()
+        {
+            void Create()
+            {
+                var existing = _frmKaraoke;
+                if (existing != null && !existing.IsDisposed)
+                {
+                    if (existing.WindowState == FormWindowState.Minimized) existing.WindowState = FormWindowState.Normal;
+                    existing.Activate();
+                    return;
+                }
+                var form = new FrmKaraoke(_settings);
+                form.FormClosed += (s, e) =>
+                {
+                    _frmKaraoke = null;
+                    SaveSettings(_settings);   // FormClosing stored the window bounds in the settings
+                };
+                _frmKaraoke = form;
+                form.Show();
+                form.SetLyrics(_lyricsCtrl.CurrentLyrics);
+                form.SyncPlayback(_mbApiInterface.Player_GetPosition(),
+                                  _mbApiInterface.Player_GetPlayState() == PlayState.Playing);
+            }
+
+            try
+            {
+                if (Control.FromHandle(_mbApiInterface.MB_GetWindowHandle()) is Form owner && owner.InvokeRequired)
+                    owner.Invoke(new Action(Create));
+                else
+                    Create();
+            }
+            catch (Exception e)
+            {
+                _mbApiInterface.MB_Trace(e.ToString());
+            }
+        }
+
         private void TimerTick(object sender, ElapsedEventArgs args)
         {
             Debug.Assert(sender is Timer);
@@ -312,11 +366,19 @@ namespace MusicBeePlugin
         {
             lock (_lock)
             {
-                if (_frmLyrics == null) return;
+                if (_frmLyrics == null && _frmKaraoke == null) return;
                 var entry = _lyricsCtrl.UpdateLyrics(!_settings.HideWhenUnavailable);
-                // Feeds the word highlight's clock; FrmLyrics marshals this to its own thread.
-                _frmLyrics.SyncPlayback(_mbApiInterface.Player_GetPosition(),
-                                        _mbApiInterface.Player_GetPlayState() == PlayState.Playing);
+                var position = _mbApiInterface.Player_GetPosition();
+                var playing = _mbApiInterface.Player_GetPlayState() == PlayState.Playing;
+                // Both windows marshal these calls to their own thread.
+                var karaoke = _frmKaraoke;
+                if (karaoke != null)
+                {
+                    karaoke.SetLyrics(_lyricsCtrl.CurrentLyrics);
+                    karaoke.SyncPlayback(position, playing);
+                }
+                if (_frmLyrics == null) return;
+                _frmLyrics.SyncPlayback(position, playing);
                 if (entry == null && _line1 != "")
                 {
                     _line1 = "";
