@@ -173,16 +173,23 @@ namespace MusicBeePlugin
         {
             StopAnimationClock();
             _animating = false;
+            // Keep the box (and window height) the transition ended with, instead of snapping to the
+            // new line's own size: the box stays put until the next line arrives.
+            var heldBox = TransitionBox(-_animTravel, 0, _blockIncoming?.Width ?? 0, _animTravel);
+            var heldHeight = _animTravel;
             _blockCurrent?.Dispose();
             _blockCurrent = _blockIncoming;
             _blockIncoming = null;
             _boxCurrent = _boxIncoming;
             _boxIncoming = null;
+            // Nothing on screen any more (song ended, no lyrics): the next song starts from its own size.
+            _boxHold = _incomingHasContent ? heldBox : null;
+            _heightHold = _blockCurrent != null && _incomingHasContent ? heldHeight : 0;
             ReplaceWordBlock(_wordBlockIncoming);
             _wordBlockIncoming = null;
             _hasContent = _incomingHasContent;
             if (_blockCurrent != null)
-                PresentFrame(null, 0, _blockCurrent, 0, _blockCurrent.Height);
+                PresentFrame(null, 0, _blockCurrent, 0, RestHeight());
             ApplyVisibility();
             StartHighlight();
         }
@@ -216,8 +223,8 @@ namespace MusicBeePlugin
             {
                 g.CompositingMode = CompositingMode.SourceOver;
                 // The snapshot becomes a plain block: bake the box that is on screen into it.
-                var box = Union(Shifted(_boxCurrent, outY), Shifted(_boxIncoming, inY));
-                if (box.HasValue) LyricsRenderer.FillBox(g, RectangleF.Intersect(box.Value, new RectangleF(0, 0, snap.Width, snap.Height)));
+                var box = TransitionBox(outY, inY, snap.Width, snap.Height);
+                if (box.HasValue) LyricsRenderer.FillBox(g, box.Value);
                 g.DrawImage(_blockCurrent, 0, outY, _blockCurrent.Width, _blockCurrent.Height);
                 g.DrawImage(_blockIncoming, 0, inY, _blockIncoming.Width, _blockIncoming.Height);
             }
@@ -239,8 +246,9 @@ namespace MusicBeePlugin
                     g.CompositingMode = CompositingMode.SourceOver;
                     // One box behind everything on screen: while two blocks slide, it spans both, so the
                     // background stays continuous instead of two boxes with a gap between them.
-                    var box = Shifted(outgoing != null ? _boxCurrent : null, outgoingY);
-                    box = Union(box, Shifted(incoming != null ? (outgoing != null ? _boxIncoming : _boxCurrent) : null, incomingY));
+                    var box = outgoing != null
+                        ? TransitionBox(outgoingY, incomingY, width, viewHeight)
+                        : incoming != null ? Union(_boxHold, _boxCurrent) : null;
                     if (box.HasValue) LyricsRenderer.FillBox(g, RectangleF.Intersect(box.Value, new RectangleF(0, 0, width, viewHeight)));
                     if (outgoing != null) g.DrawImage(outgoing, 0, outgoingY, outgoing.Width, outgoing.Height);
                     if (incoming != null) g.DrawImage(incoming, 0, incomingY, incoming.Width, incoming.Height);
@@ -324,7 +332,7 @@ namespace MusicBeePlugin
                 Redraw();
                 return;
             }
-            PresentFrame(null, 0, _blockCurrent, 0, _blockCurrent.Height);
+            PresentFrame(null, 0, _blockCurrent, 0, RestHeight());
             if (_highlightOn)
             {
                 _lastX1 = _lastX2 = -1;   // the plain frame just replaced the highlight: paint it again
@@ -373,6 +381,7 @@ namespace MusicBeePlugin
             _blockCurrent?.Dispose();
             _blockCurrent = block;
             _boxCurrent = box;
+            ResetHold();
             ReplaceWordBlock(word);
             _hasContent = HasContent();
 
@@ -447,6 +456,7 @@ namespace MusicBeePlugin
                 _blockCurrent?.Dispose();
                 _blockCurrent = incoming;
                 _boxCurrent = box;
+                ResetHold();
                 ReplaceWordBlock(word);
                 _hasContent = incomingHasContent;
                 PresentFrame(null, 0, incoming, 0, incoming.Height);
@@ -465,6 +475,7 @@ namespace MusicBeePlugin
                     _blockCurrent?.Dispose();
                     _blockCurrent = snapshot;
                     _boxCurrent = null;   // the snapshot already has the box baked in
+                    ResetHold();
                 }
             }
             StopAnimation();
@@ -475,7 +486,7 @@ namespace MusicBeePlugin
             _boxIncoming = box;
             _wordBlockIncoming = word;
             _incomingHasContent = incomingHasContent;
-            _animTravel = Math.Max(_blockCurrent.Height, incoming.Height);
+            _animTravel = Math.Max(RestHeight(), incoming.Height);
             _animDuration = Math.Max(AnimMinDuration, Math.Min(AnimMaxDuration, _settings.SmoothScrollDuration));
             _animWatch.Restart();
 
@@ -542,7 +553,7 @@ namespace MusicBeePlugin
             if (Math.Abs(x1 - _lastX1) < 0.5f && Math.Abs(x2 - _lastX2) < 0.5f) return done;
             _lastX1 = x1;
             _lastX2 = x2;
-            PresentFrame(null, 0, _blockCurrent, 0, _blockCurrent.Height);   // draws box, text and highlight
+            PresentFrame(null, 0, _blockCurrent, 0, RestHeight());   // draws box, text and highlight
             return done;
         }
 
@@ -582,6 +593,28 @@ namespace MusicBeePlugin
 
         // ---- single-box background ----
         private RectangleF? _boxCurrent, _boxIncoming;
+        // Box and window height left by the last transition; kept at rest so the box does not shrink
+        // to the new line's own size the moment the slide ends. Cleared on a full redraw.
+        private RectangleF? _boxHold;
+        private int _heightHold;
+
+        /// <summary>The box on screen during a slide: everything the outgoing block covered at rest
+        /// (including what it was holding) plus the incoming block's box, clipped to the frame.</summary>
+        private RectangleF? TransitionBox(int outgoingY, int incomingY, int width, int viewHeight)
+        {
+            var box = Union(Shifted(Union(_boxHold, _boxCurrent), outgoingY), Shifted(_boxIncoming, incomingY));
+            if (!box.HasValue || width <= 0 || viewHeight <= 0) return box;
+            var clipped = RectangleF.Intersect(box.Value, new RectangleF(0, 0, width, viewHeight));
+            return clipped.Width > 0 && clipped.Height > 0 ? clipped : (RectangleF?)null;
+        }
+
+        private int RestHeight() => Math.Max(_blockCurrent?.Height ?? 0, _heightHold);
+
+        private void ResetHold()
+        {
+            _boxHold = null;
+            _heightHold = 0;
+        }
 
         private static RectangleF? Shifted(RectangleF? box, int dy)
         {
