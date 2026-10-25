@@ -11,6 +11,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "external", "external", "{FB
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RomajiCore", "external\RomajiCore\RomajiCore.csproj", "{88536940-6315-4439-8826-C4B1A9463ADB}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{05C22C2F-61FA-4253-A6C5-C0FE0712729E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DesktopLyrics.Tests", "tests\DesktopLyrics.Tests\DesktopLyrics.Tests.csproj", "{8F2CF277-B8A4-474E-AA09-B96A9A9D1383}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -28,9 +32,14 @@ Global
 		{88536940-6315-4439-8826-C4B1A9463ADB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{88536940-6315-4439-8826-C4B1A9463ADB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{88536940-6315-4439-8826-C4B1A9463ADB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8F2CF277-B8A4-474E-AA09-B96A9A9D1383}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8F2CF277-B8A4-474E-AA09-B96A9A9D1383}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8F2CF277-B8A4-474E-AA09-B96A9A9D1383}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8F2CF277-B8A4-474E-AA09-B96A9A9D1383}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{16707EA4-EDB1-448A-931A-95BE8EB47D2C} = {30D6DF3C-815B-4DDF-966C-FD3E7DCE56F3}
 		{88536940-6315-4439-8826-C4B1A9463ADB} = {FB21CA50-7033-4841-A1A6-35E5441108C2}
+		{8F2CF277-B8A4-474E-AA09-B96A9A9D1383} = {05C22C2F-61FA-4253-A6C5-C0FE0712729E}
 	EndGlobalSection
 EndGlobal

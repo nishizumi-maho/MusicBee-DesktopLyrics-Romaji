@@ -36,8 +36,7 @@ namespace MusicBeePlugin
                     _lyrics = LyricParser.ParseLyric(lyrics);
                     if (romajiOn) TryApplyRomaji(_lyrics);
                     _lastLyrics = lyrics;
-                    _lastRomaji = romajiOn;
-                }
+                    _lastRomaji = romajiOn;                }
             }
             else
             {

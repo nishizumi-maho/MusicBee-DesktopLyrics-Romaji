@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -14,6 +15,9 @@ namespace MusicBeePlugin
         private static readonly Regex LyricWordRegex = new Regex(@".*\](.*)", RegexOptions.Compiled);
         private static readonly Regex LyricTimeRegex = new Regex(@"\[([0-9.:]*)\]+(.*?)", RegexOptions.Compiled);
         private static readonly Regex LyricTimeSingleRegex = new Regex(@"(\d+):(\d+)(\.(\d+))?", RegexOptions.Compiled);
+        // Enhanced LRC word stamp: <mm:ss.xx> (or .xxx) before each segment; a final stamp with no text
+        // marks where the last segment ends.
+        private static readonly Regex WordStampRegex = new Regex(@"<(\d+):(\d+)(?:[.:](\d{1,3}))?>", RegexOptions.Compiled);
 
         public static bool PreserveSlash { get; set; }
 
@@ -53,6 +57,9 @@ namespace MusicBeePlugin
                     var wordMatch = LyricWordRegex.Match(line);
                     var word = wordMatch.Groups[1].Value;
 
+                    var segments = ParseWordSegments(word);
+                    if (segments != null) word = string.Concat(segments.Select(s => s.Text));
+
                     if (word.Length == 0) word = " ";
 
                     var timeMatch = LyricTimeRegex.Matches(line);
@@ -77,7 +84,7 @@ namespace MusicBeePlugin
 
                         // Netease uses .MMM that provides milliseconds instead of 1/100s second
                         var time = mins * 60 * 1000 + secs * 1000 + msec;
-                        rawLyrics.Add(new RawLyricEntry(time, word));
+                        rawLyrics.Add(new RawLyricEntry(time, word) { Segments = segments });
                     }
                 }
             }
@@ -94,14 +101,50 @@ namespace MusicBeePlugin
             {
                 Entries = entries,
                 Offset = lyricOffset,
-                HasTranslation = hasTranslation
+                HasTranslation = hasTranslation,
+                HasWordTimestamps = entries.Any(e => e.Segments != null)
             };
+        }
+
+        /// <summary>Segments of an enhanced LRC line body, or null when the body has no word stamps.
+        /// Text between stamps is kept verbatim: no separator is inserted, so Japanese stays unspaced
+        /// and Latin text carries its own spaces.</summary>
+        private static List<WordSegment> ParseWordSegments(string body)
+        {
+            var marks = WordStampRegex.Matches(body);
+            if (marks.Count == 0) return null;
+            var segments = new List<WordSegment>();
+            for (var i = 0; i < marks.Count; i++)
+            {
+                var m = marks[i];
+                var end = i + 1 < marks.Count ? marks[i + 1].Index : body.Length;
+                var text = body.Substring(m.Index + m.Length, end - m.Index - m.Length);
+                var start = StampToMs(m);
+                if (segments.Count > 0 && double.IsNaN(segments[segments.Count - 1].EndMs))
+                    segments[segments.Count - 1].EndMs = start;
+                if (text.Length > 0)
+                    segments.Add(new WordSegment { Text = text, StartMs = start, EndMs = double.NaN });
+            }
+            if (segments.Count == 0) return null;
+            // A line without a final stamp: the last segment ends when it starts (lit at once).
+            var last = segments[segments.Count - 1];
+            if (double.IsNaN(last.EndMs)) last.EndMs = last.StartMs;
+            return segments;
+        }
+
+        private static double StampToMs(Match m)
+        {
+            var frac = m.Groups[3].Value;
+            var ms = frac.Length == 0 ? 0 : int.Parse(frac.PadRight(3, '0'), CultureInfo.InvariantCulture);
+            return int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) * 60000
+                   + int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) * 1000 + ms;
         }
 
         private static (List<LyricEntry>, bool) FoldLyricTranslation(IEnumerable<RawLyricEntry> rawLyrics)
         {
             var tableLine1 = new Dictionary<double, string>();
             var tableLine2 = new Dictionary<double, string>();
+            var segments1 = new Dictionary<double, List<WordSegment>>();
 
             foreach (var rawLyricEntry in rawLyrics)
             {
@@ -109,6 +152,7 @@ namespace MusicBeePlugin
                     continue;
                 if (!PreserveSlash && rawLyricEntry.LyricLine.Contains("/"))
                 {
+                    // Split into line + translation: the word stamps no longer describe line 1, drop them.
                     var segs = rawLyricEntry.LyricLine.Split(new[] { '/' }, 2);
                     tableLine1.Add(rawLyricEntry.Time, segs[0]);
                     tableLine2.Add(rawLyricEntry.Time, segs[1]);
@@ -116,7 +160,10 @@ namespace MusicBeePlugin
                 else if (tableLine1.ContainsKey(rawLyricEntry.Time))
                     tableLine2.Add(rawLyricEntry.Time, rawLyricEntry.LyricLine);
                 else
+                {
                     tableLine1.Add(rawLyricEntry.Time, rawLyricEntry.LyricLine);
+                    if (rawLyricEntry.Segments != null) segments1[rawLyricEntry.Time] = rawLyricEntry.Segments;
+                }
             }
 
             var sortedTime = new ArrayList(tableLine1.Keys);
@@ -124,7 +171,10 @@ namespace MusicBeePlugin
 
             var entries = new List<LyricEntry>();
             foreach (double time in sortedTime)
-                entries.Add(new LyricEntry(time, tableLine1[time], (tableLine2.TryGetValue(time, out var line2) ? line2 : null)));
+                entries.Add(new LyricEntry(time, tableLine1[time], (tableLine2.TryGetValue(time, out var line2) ? line2 : null))
+                {
+                    Segments = segments1.TryGetValue(time, out var s) ? s : null
+                });
             return (entries, tableLine2.Count > 0);
         }
 
@@ -140,6 +190,10 @@ namespace MusicBeePlugin
             public double TimeMs { get; set; }
             public string LyricLine1 { get; set; }
             public string LyricLine2 { get; set; }
+            /// <summary>Word timing of line 1 (enhanced LRC); null for line-timed entries.</summary>
+            public List<WordSegment> Segments { get; set; }
+            /// <summary>Word timing of line 2 when it is the romaji of line 1; null otherwise.</summary>
+            public List<WordSegment> Segments2 { get; set; }
 
             public LyricEntry(double time, string lyricLine1, string lyricLine2)
             {
@@ -168,6 +222,7 @@ namespace MusicBeePlugin
         {
             public double Time { get; set; }
             public string LyricLine { get; set; }
+            public List<WordSegment> Segments { get; set; }
 
             public RawLyricEntry(double time, string lyricLine)
             {
@@ -176,11 +231,19 @@ namespace MusicBeePlugin
             }
         }
 
+        public class WordSegment
+        {
+            public string Text { get; set; }
+            public double StartMs { get; set; }
+            public double EndMs { get; set; }
+        }
+
         public class Lyrics
         {
             public List<LyricEntry> Entries; // Sorted guaranteed
             public double Offset;
             public bool HasTranslation;
+            public bool HasWordTimestamps;
         }
     }
 }
