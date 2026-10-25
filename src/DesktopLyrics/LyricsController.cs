@@ -1,4 +1,4 @@
-﻿// Modified by nishizumi-maho, 2026 (Desktop Lyrics romaji fork): Shows romaji (bundled RomajiCore engine) as the second line of Japanese lyrics, with an on/off switch.
+// Modified by nishizumi-maho, 2026 (Desktop Lyrics romaji fork): Shows romaji (bundled RomajiCore engine) as the second line of Japanese lyrics, with an on/off switch.
 // Original work: Copyright Charlie Jiang, licensed under the Apache License 2.0.
 using System;
 using System.Collections.Generic;
@@ -12,6 +12,10 @@ namespace MusicBeePlugin
     public class LyricsController
     {
         public bool NextLineWhenNoTranslation { get; set; }
+
+        /// <summary>Continuous mode: every view carries the line after the current one as well, and an
+        /// instrumental gap shows only that upcoming line instead of clearing the screen.</summary>
+        public bool Continuous { get; set; }
 
         private readonly Plugin.MusicBeeApiInterface _interface;
         private string _lastLyrics;
@@ -66,6 +70,7 @@ namespace MusicBeePlugin
 
             if (entries.Count <= 0) return null;
             var index = SelectEntryIndex(entries, nTime, LeadInMs);
+            if (Continuous) return ContinuousView(_lyrics, index, nTime, LeadInMs);
             // Instrumental stretch after a sung line: clear the screen instead of leaving the finished
             // line up until the next one arrives.
             if (IsInstrumentalGap(entries, index, nTime, GapLingerMs, LeadInMs)) return null;
@@ -77,6 +82,32 @@ namespace MusicBeePlugin
                 : new LyricView(currentEntry.LyricLine1, nextEntry.LyricLine1);
             view.Segments = currentEntry.Segments;
             view.OffsetMs = _lyrics.Offset;
+            return view;
+        }
+
+        /// <summary>The view for continuous mode: the current entry with its romaji/translation, and the
+        /// next non-blank entry under it. During an instrumental gap the current line is empty.</summary>
+        public static LyricView ContinuousView(LyricParser.Lyrics lyrics, int index, double timeMs, double leadInMs)
+        {
+            var entries = lyrics.Entries;
+            LyricParser.LyricEntry next = null;
+            for (var i = index + 1; i < entries.Count && next == null; i++)
+                if (!string.IsNullOrWhiteSpace(entries[i].LyricLine1)) next = entries[i];
+
+            var gap = IsInstrumentalGap(entries, index, timeMs, GapLingerMs, leadInMs);
+            if (gap && next == null) return null;
+
+            var current = entries[index];
+            var view = gap
+                ? new LyricView("", null)
+                : new LyricView(current.LyricLine1, lyrics.HasTranslation ? current.LyricLine2 : null)
+                {
+                    Segments = current.Segments,
+                    Segments2 = lyrics.HasTranslation ? current.Segments2 : null
+                };
+            view.NextLine1 = next?.LyricLine1;
+            view.NextLine2 = next != null && lyrics.HasTranslation ? next.LyricLine2 : null;
+            view.OffsetMs = lyrics.Offset;
             return view;
         }
 
@@ -240,6 +271,9 @@ namespace MusicBeePlugin
             public List<LyricParser.WordSegment> Segments { get; set; }
             /// <summary>Word timing of line 2 when it is the romaji of line 1; null otherwise.</summary>
             public List<LyricParser.WordSegment> Segments2 { get; set; }
+            /// <summary>Continuous mode: the line after this one (and its romaji/translation); null otherwise.</summary>
+            public string NextLine1 { get; set; }
+            public string NextLine2 { get; set; }
             /// <summary>The lyrics' [offset:], added to the player position before timing words.</summary>
             public double OffsetMs { get; set; }
 

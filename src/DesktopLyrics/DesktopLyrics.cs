@@ -95,6 +95,7 @@ namespace MusicBeePlugin
             SaveSettings(_settings);
             LyricParser.PreserveSlash = _settings.PreserveSlash;
             _lyricsCtrl.NextLineWhenNoTranslation = _settings.NextLineWhenNoTranslation;
+            _lyricsCtrl.Continuous = _settings.ContinuousMode;
             _lyricsCtrl.LeadInMs = LeadIn(_settings);
             _songLyricsSent = null;   // "next line" mode may have changed which pairs are shown
             var frm = _frmLyrics;
@@ -168,6 +169,7 @@ namespace MusicBeePlugin
                         Application.EnableVisualStyles();
                         LyricParser.PreserveSlash = _settings.PreserveSlash;
                         _lyricsCtrl.NextLineWhenNoTranslation = _settings.NextLineWhenNoTranslation;
+                        _lyricsCtrl.Continuous = _settings.ContinuousMode;
                         _lyricsCtrl.LeadInMs = LeadIn(_settings);
                         try
                         {
@@ -363,7 +365,7 @@ namespace MusicBeePlugin
         private static double LeadIn(SettingsObj s) =>
             s.SmoothScroll ? Math.Max(200, Math.Min(1500, s.SmoothScrollDuration)) + UpdateIntervalMs : UpdateIntervalMs;
 
-        private string _line1, _line2;
+        private string _line1, _line2, _next1;
         private LyricParser.Lyrics _songLyricsSent;
         private void UpdateLyrics(bool force = false)
         {
@@ -387,20 +389,22 @@ namespace MusicBeePlugin
                 if (!ReferenceEquals(lyrics, _songLyricsSent))
                 {
                     _songLyricsSent = lyrics;
-                    _frmLyrics.SetSongLines(LyricsController.SongViews(lyrics, _settings.NextLineWhenNoTranslation));
+                    _frmLyrics.SetSongLines(LyricsController.SongViews(lyrics, _settings.NextLineWhenNoTranslation && !_settings.ContinuousMode));
                 }
-                if (entry == null && _line1 != "")
+                if (entry == null && (_line1 != "" || _next1 != null))
                 {
                     _line1 = "";
+                    _next1 = null;
                     _frmLyrics.Clear();
                     return;
                 }
 
                 if (entry == null) return;
-                if (!force && entry.LyricLine1 == _line1 && entry.LyricLine2 == _line2) return;
+                if (!force && entry.LyricLine1 == _line1 && entry.LyricLine2 == _line2 && entry.NextLine1 == _next1) return;
                 _frmLyrics.UpdateLyrics(entry);   // marshals to the form's thread
                 _line1 = entry.LyricLine1;
                 _line2 = entry.LyricLine2;
+                _next1 = entry.NextLine1;
             }
         }
 

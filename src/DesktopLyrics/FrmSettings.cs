@@ -1,4 +1,4 @@
-﻿// Modified by nishizumi-maho, 2026 (Desktop Lyrics romaji fork): New options: lyrics opacity, second-line colour, single box background, smooth line transitions (duration and frame rate), romaji switch, update options; dialog grows to fit.
+// Modified by nishizumi-maho, 2026 (Desktop Lyrics romaji fork): New options: lyrics opacity, second-line colour, single box background, smooth line transitions (duration and frame rate), romaji switch, update options; dialog grows to fit.
 // Original work: Copyright Charlie Jiang, licensed under the Apache License 2.0.
 using System;
 using System.Diagnostics.CodeAnalysis;
@@ -41,6 +41,7 @@ namespace MusicBeePlugin
         private CheckBox _chkBox;
         private CheckBox _chkFixedBox;
         private CheckBox _chkSmoothScroll;
+        private CheckBox _chkContinuous;
         private TrackBar _barSmoothScroll;
         private Label _lblSmoothFps;
         private TrackBar _barSmoothFps;
@@ -120,8 +121,13 @@ namespace MusicBeePlugin
                 _barSmoothFps.Enabled = _chkSmoothScroll.Checked;
                 SettingsChanged?.Invoke(this, _settings);
             };
+            _chkContinuous = new CheckBox { Text = "Continuous mode (2 lines rolling up)", AutoSize = true, Checked = _settings.ContinuousMode, Anchor = AnchorStyles.Left };
+            _chkContinuous.CheckedChanged += (s, e) => { _settings.ContinuousMode = _chkContinuous.Checked; SettingsChanged?.Invoke(this, _settings); };
+            var smoothFlow = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0) };
+            smoothFlow.Controls.Add(_chkSmoothScroll);
+            smoothFlow.Controls.Add(_chkContinuous);
             table.Controls.Add(lblSmooth, 0, row + 3);
-            table.Controls.Add(_chkSmoothScroll, 1, row + 3);
+            table.Controls.Add(smoothFlow, 1, row + 3);
 
             var lblSmoothDur = new Label { Text = "Transition time:", AutoSize = true, Anchor = AnchorStyles.Left, Margin = label1Margin() };
             _barSmoothScroll = new TrackBar
@@ -335,6 +341,7 @@ namespace MusicBeePlugin
             _settings.WordHighlight = _chkWordHighlight.Checked;
             _settings.HighlightColor = _btnHighlightColor.BackColor;
             _settings.FixedBoxPerSong = _chkFixedBox.Checked;
+            _settings.ContinuousMode = _chkContinuous.Checked;
         }
     }
 
@@ -364,6 +371,7 @@ namespace MusicBeePlugin
         public Color HighlightColor = Color.FromArgb(0x50, 0xE6, 0xF0);
         public int KaraokeX = -1, KaraokeY = -1, KaraokeW = -1, KaraokeH = -1;   // karaoke window bounds
         public bool FixedBoxPerSong;            // single box sized to the song's largest line, for the whole song
+        public bool ContinuousMode;             // current + next line on screen, rolling up like a strip of paper
         public bool KaraokeFullscreen;
         public string SkippedVersion;           // release tag the user chose to skip
         public int PosY = -1;

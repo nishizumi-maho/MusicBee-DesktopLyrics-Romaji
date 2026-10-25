@@ -1,5 +1,5 @@
 ﻿// Modified by nishizumi-maho, 2026 (Desktop Lyrics romaji fork): Lyrics opacity (whole window alpha), a right-click menu with settings and opacity presets,
-// romaji switch and update check in that menu, and smooth-scroll line transitions.
+// romaji switch and update check in that menu, smooth-scroll line transitions and a continuous (rolling) mode.
 // Original work: Copyright Charlie Jiang, licensed under the Apache License 2.0.
 using System;
 using System.Collections.Generic;
@@ -147,6 +147,11 @@ namespace MusicBeePlugin
             {
                 // At rest the same clock drives the word highlight, if there is one to drive.
                 if (!_highlightOn || PresentHighlightFrame() || !_clock.Playing) StopAnimationClock();
+                return;
+            }
+            if (Continuous)
+            {
+                PaperTick();
                 return;
             }
             if (_blockCurrent == null || _blockIncoming == null)
@@ -309,6 +314,7 @@ namespace MusicBeePlugin
                 ReplaceWordBlock(null);
                 _wordBlockIncoming?.Dispose();
                 _wordBlockIncoming = null;
+                DisposePaper();
             };
         }
 
@@ -327,6 +333,12 @@ namespace MusicBeePlugin
         private void RepresentCurrent()
         {
             if (_animating) return;   // an in-flight frame already carries the new alpha
+            if (Continuous)
+            {
+                if (_paper.Count > 0) PresentPaperRest();   // draws the highlight too
+                _lastX1 = _lastX2 = -1;
+                return;
+            }
             if (_blockCurrent == null)
             {
                 Redraw();
@@ -375,6 +387,12 @@ namespace MusicBeePlugin
         /// <summary>Full re-render at rest. Used when settings change; never animates.</summary>
         private void Redraw()
         {
+            if (Continuous)
+            {
+                PaperRedraw();
+                return;
+            }
+            DisposePaper();   // left over from continuous mode
             StopAnimation();
             var block = RenderBlock(out var word, out var box);
             if (block == null) return;
@@ -395,9 +413,10 @@ namespace MusicBeePlugin
         {
             if (PostToUiThread(Clear)) return;
             if (_line1 == null && _line2 == null) return;
-            if (string.IsNullOrEmpty(_line1) && _line2 == null) return;
+            if (string.IsNullOrEmpty(_line1) && _line2 == null && _next1 == null) return;
             _line1 = "";
             _line2 = null;
+            _next1 = _next2 = null;
             _segs1 = _segs2 = null;
             TransitionToNewContent();
         }
@@ -407,9 +426,12 @@ namespace MusicBeePlugin
             if (PostToUiThread(() => UpdateLyrics(view))) return;
             // The plugin force-refreshes on play-state changes; re-animating identical content would
             // make the lyrics jump for no reason.
-            if (view.LyricLine1 == _line1 && view.LyricLine2 == _line2 && view.Segments == _segs1) return;
+            if (view.LyricLine1 == _line1 && view.LyricLine2 == _line2 && view.Segments == _segs1 &&
+                view.NextLine1 == _next1 && view.NextLine2 == _next2) return;
             _line1 = view.LyricLine1;
             _line2 = view.LyricLine2;
+            _next1 = view.NextLine1;
+            _next2 = view.NextLine2;
             _segs1 = view.Segments;
             _segs2 = view.Segments2;
             _offsetMs = view.OffsetMs;
@@ -446,6 +468,11 @@ namespace MusicBeePlugin
 
         private void TransitionToNewContent()
         {
+            if (Continuous)
+            {
+                PaperTransition(animate: true);
+                return;
+            }
             var incomingHasContent = HasContent();
             var incoming = RenderBlock(out var word, out var box);
             if (incoming == null) return;
@@ -527,7 +554,8 @@ namespace MusicBeePlugin
         private void StartHighlight()
         {
             _lastX1 = _lastX2 = -1;
-            _highlightOn = _wordBlock != null && _settings.WordHighlight && _blockCurrent != null;
+            _highlightOn = _settings.WordHighlight &&
+                           (Continuous ? _paperTop?.Word != null : _wordBlock != null && _blockCurrent != null);
             if (!_highlightOn) return;
             var done = PresentHighlightFrame();
             if (!done && _clock.Playing) StartAnimationClock();
@@ -549,12 +577,14 @@ namespace MusicBeePlugin
         /// the line is lit (nothing left to animate).</summary>
         private bool PresentHighlightFrame()
         {
-            if (_wordBlock?.Highlight == null || _blockCurrent == null || _segs1 == null) return true;
-            var (x1, x2, done) = LitPositions(_wordBlock);
+            var word = Continuous ? _paperTop?.Word : _wordBlock;
+            if (word?.Highlight == null || !Continuous && _blockCurrent == null || _segs1 == null) return true;
+            var (x1, x2, done) = LitPositions(word);
             if (Math.Abs(x1 - _lastX1) < 0.5f && Math.Abs(x2 - _lastX2) < 0.5f) return done;
             _lastX1 = x1;
             _lastX2 = x2;
-            PresentFrame(null, 0, _blockCurrent, 0, RestHeight());   // draws box, text and highlight
+            if (Continuous) PresentPaperRest();
+            else PresentFrame(null, 0, _blockCurrent, 0, RestHeight());   // draws box, text and highlight
             return done;
         }
 
@@ -575,20 +605,23 @@ namespace MusicBeePlugin
             return (x1, x2, done);
         }
 
-        private void DrawHighlight(Graphics g, RenderedBlock word, int offsetY, int w, int h)
+        private void DrawHighlight(Graphics g, RenderedBlock word, int offsetY, int w, int h, float alpha = 1f)
         {
             if (word.Highlight == null || _segs1 == null) return;
             var (x1, x2, _) = LitPositions(word);
-            DrawLit(g, word, 0, x1, offsetY, w, h);
-            if (word.LineRects.Length > 1) DrawLit(g, word, 1, x2, offsetY, w, h);
+            DrawLit(g, word, 0, x1, offsetY, w, h, alpha);
+            if (word.LineRects.Length > 1) DrawLit(g, word, 1, x2, offsetY, w, h, alpha);
         }
 
-        private static void DrawLit(Graphics g, RenderedBlock word, int line, float x, int offsetY, int w, int h)
+        private static void DrawLit(Graphics g, RenderedBlock word, int line, float x, int offsetY, int w, int h, float alpha)
         {
             if (x <= 0) return;
             var r = word.LineRects[line];
             g.SetClip(new RectangleF(0, r.Top + offsetY, x, r.Height));
-            g.DrawImage(word.Highlight, 0, offsetY, w, h);
+            if (alpha >= 0.996f) g.DrawImage(word.Highlight, 0, offsetY, w, h);
+            else
+                using (var attributes = AlphaAttributes(alpha))
+                    g.DrawImage(word.Highlight, new Rectangle(0, offsetY, w, h), 0, 0, w, h, GraphicsUnit.Pixel, attributes);
             g.ResetClip();
         }
 
