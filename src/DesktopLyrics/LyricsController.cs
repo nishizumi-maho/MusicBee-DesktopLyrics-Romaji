@@ -62,6 +62,9 @@ namespace MusicBeePlugin
 
             if (entries.Count <= 0) return null;
             var index = SelectEntryIndex(entries, nTime, LeadInMs);
+            // Instrumental stretch after a sung line: clear the screen instead of leaving the finished
+            // line up until the next one arrives.
+            if (IsInstrumentalGap(entries, index, nTime, GapLingerMs, LeadInMs)) return null;
             var currentEntry = entries[index];
             var nextEntry = index + 1 < entries.Count ? entries[index + 1] : null;
 
@@ -86,6 +89,23 @@ namespace MusicBeePlugin
                 if (SwitchTime(entries[i - 1], entries[i], leadInMs) > timeMs)
                     return i - 1;
             return entries.Count - 1;
+        }
+
+        /// <summary>How long a word-timed line stays on screen after its last word before an
+        /// instrumental gap clears it.</summary>
+        public const double GapLingerMs = 1500;
+
+        /// <summary>True while the music is instrumental between word-timed lines: the current line's
+        /// last word ended more than <paramref name="lingerMs"/> ago and the next line has not arrived yet
+        /// (or there is none). Plain line-timed lyrics are never cleared: their line ends are unknown.</summary>
+        public static bool IsInstrumentalGap(IList<LyricParser.LyricEntry> entries, int index, double timeMs,
+                                             double lingerMs, double leadInMs)
+        {
+            if (index < 0 || index >= entries.Count) return false;
+            var entry = entries[index];
+            if (entry.Segments == null || entry.Segments.Count == 0) return false;
+            if (timeMs < entry.Segments[entry.Segments.Count - 1].EndMs + lingerMs) return false;
+            return index + 1 >= entries.Count || timeMs < SwitchTime(entry, entries[index + 1], leadInMs);
         }
 
         private static double SwitchTime(LyricParser.LyricEntry previous, LyricParser.LyricEntry next, double leadInMs)
