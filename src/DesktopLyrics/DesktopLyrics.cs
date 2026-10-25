@@ -96,6 +96,7 @@ namespace MusicBeePlugin
             LyricParser.PreserveSlash = _settings.PreserveSlash;
             _lyricsCtrl.NextLineWhenNoTranslation = _settings.NextLineWhenNoTranslation;
             _lyricsCtrl.LeadInMs = LeadIn(_settings);
+            _songLyricsSent = null;   // "next line" mode may have changed which pairs are shown
             var frm = _frmLyrics;
             frm?.Invoke(new Action(() =>
             {
@@ -287,6 +288,7 @@ namespace MusicBeePlugin
         private void CreateLyricsForm()
         {
             _frmLyrics = new FrmLyrics(_settings);
+            _songLyricsSent = null;   // the new window has not measured the song yet
             _frmLyrics.SettingsRequested += (s, e) => Configure(IntPtr.Zero);
             _frmLyrics.SettingsEdited += (s, e) => SaveSettings(_settings);
             _frmLyrics.RomajiStateProvider = _lyricsCtrl.GetRomajiSetting;
@@ -362,6 +364,7 @@ namespace MusicBeePlugin
             s.SmoothScroll ? Math.Max(200, Math.Min(1500, s.SmoothScrollDuration)) + UpdateIntervalMs : UpdateIntervalMs;
 
         private string _line1, _line2;
+        private LyricParser.Lyrics _songLyricsSent;
         private void UpdateLyrics(bool force = false)
         {
             lock (_lock)
@@ -379,6 +382,13 @@ namespace MusicBeePlugin
                 }
                 if (_frmLyrics == null) return;
                 _frmLyrics.SyncPlayback(position, playing);
+                // New song (or romaji toggled): the window measures the song's lines once, for the fixed box.
+                var lyrics = _lyricsCtrl.CurrentLyrics;
+                if (!ReferenceEquals(lyrics, _songLyricsSent))
+                {
+                    _songLyricsSent = lyrics;
+                    _frmLyrics.SetSongLines(LyricsController.SongViews(lyrics, _settings.NextLineWhenNoTranslation));
+                }
                 if (entry == null && _line1 != "")
                 {
                     _line1 = "";

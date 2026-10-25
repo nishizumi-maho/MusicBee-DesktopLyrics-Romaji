@@ -39,6 +39,7 @@ namespace MusicBeePlugin
         private CheckBox _chkLine2Color;
         private Button _btnLine2Color;
         private CheckBox _chkBox;
+        private CheckBox _chkFixedBox;
         private CheckBox _chkSmoothScroll;
         private TrackBar _barSmoothScroll;
         private Label _lblSmoothFps;
@@ -60,9 +61,19 @@ namespace MusicBeePlugin
 
             var lblBox = new Label { Text = "Background:", AutoSize = true, Anchor = AnchorStyles.Left, Margin = label1Margin() };
             _chkBox = new CheckBox { Text = "Single padded box (uses background opacity)", AutoSize = true, Checked = _settings.BoxBackground, Anchor = AnchorStyles.Left };
-            _chkBox.CheckedChanged += (s, e) => { _settings.BoxBackground = _chkBox.Checked; SettingsChanged?.Invoke(this, _settings); };
+            _chkFixedBox = new CheckBox { Text = "Fixed size per song (largest line)", AutoSize = true, Checked = _settings.FixedBoxPerSong, Enabled = _settings.BoxBackground, Anchor = AnchorStyles.Left };
+            _chkBox.CheckedChanged += (s, e) =>
+            {
+                _settings.BoxBackground = _chkBox.Checked;
+                _chkFixedBox.Enabled = _chkBox.Checked;
+                SettingsChanged?.Invoke(this, _settings);
+            };
+            _chkFixedBox.CheckedChanged += (s, e) => { _settings.FixedBoxPerSong = _chkFixedBox.Checked; SettingsChanged?.Invoke(this, _settings); };
+            var boxFlow = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0) };
+            boxFlow.Controls.Add(_chkBox);
+            boxFlow.Controls.Add(_chkFixedBox);
             table.Controls.Add(lblBox, 0, row + 2);
-            table.Controls.Add(_chkBox, 1, row + 2);
+            table.Controls.Add(boxFlow, 1, row + 2);
 
             var lblOpacity = new Label { Text = "Lyrics opacity:", AutoSize = true, Anchor = AnchorStyles.Left, Margin = label1Margin() };
             _barTextOpacity = new TrackBar
@@ -323,6 +334,7 @@ namespace MusicBeePlugin
             _settings.AutoInstallUpdates = _chkAutoInstall.Checked;
             _settings.WordHighlight = _chkWordHighlight.Checked;
             _settings.HighlightColor = _btnHighlightColor.BackColor;
+            _settings.FixedBoxPerSong = _chkFixedBox.Checked;
         }
     }
 
@@ -351,6 +363,7 @@ namespace MusicBeePlugin
         public bool WordHighlight = true;       // fill words as they are sung (enhanced LRC with word timing)
         public Color HighlightColor = Color.FromArgb(0x50, 0xE6, 0xF0);
         public int KaraokeX = -1, KaraokeY = -1, KaraokeW = -1, KaraokeH = -1;   // karaoke window bounds
+        public bool FixedBoxPerSong;            // single box sized to the song's largest line, for the whole song
         public bool KaraokeFullscreen;
         public string SkippedVersion;           // release tag the user chose to skip
         public int PosY = -1;

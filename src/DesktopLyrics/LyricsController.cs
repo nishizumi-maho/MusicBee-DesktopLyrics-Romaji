@@ -95,6 +95,23 @@ namespace MusicBeePlugin
             return entries.Count - 1;
         }
 
+        /// <summary>Every (line 1, line 2) pair the lyrics window will show during the song, with the same
+        /// rules as <see cref="UpdateLyrics"/>: the translation/romaji line, or the next line, or nothing.</summary>
+        public static List<(string, string)> SongViews(LyricParser.Lyrics lyrics, bool nextLineWhenNoTranslation)
+        {
+            var views = new List<(string, string)>();
+            if (lyrics?.Entries == null) return views;
+            for (var i = 0; i < lyrics.Entries.Count; i++)
+            {
+                var e = lyrics.Entries[i];
+                var next = i + 1 < lyrics.Entries.Count ? lyrics.Entries[i + 1] : null;
+                views.Add(lyrics.HasTranslation || next == null || !nextLineWhenNoTranslation
+                    ? (e.LyricLine1, e.LyricLine2)
+                    : (e.LyricLine1, next.LyricLine1));
+            }
+            return views;
+        }
+
         /// <summary>How long a word-timed line stays on screen after its last word before an
         /// instrumental gap clears it.</summary>
         public const double GapLingerMs = 1500;

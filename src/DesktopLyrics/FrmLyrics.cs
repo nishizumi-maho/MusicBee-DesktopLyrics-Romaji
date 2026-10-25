@@ -246,8 +246,8 @@ namespace MusicBeePlugin
                     g.CompositingMode = CompositingMode.SourceOver;
                     // One box behind everything on screen: while two blocks slide, it spans both, so the
                     // background stays continuous instead of two boxes with a gap between them.
-                    var box = outgoing != null
-                        ? TransitionBox(outgoingY, incomingY, width, viewHeight)
+                    var box = FixedBox ? _songBox
+                        : outgoing != null ? TransitionBox(outgoingY, incomingY, width, viewHeight)
                         : incoming != null ? Union(_boxHold, _boxCurrent) : null;
                     if (box.HasValue) LyricsRenderer.FillBox(g, RectangleF.Intersect(box.Value, new RectangleF(0, 0, width, viewHeight)));
                     if (outgoing != null) g.DrawImage(outgoing, 0, outgoingY, outgoing.Width, outgoing.Height);
@@ -345,6 +345,7 @@ namespace MusicBeePlugin
             if (PostToUiThread(() => UpdateFromSettings(settings))) return;
             _settings = settings;
             LyricsRenderer.UpdateFromSettings(settings, Width);
+            MeasureSong();   // font, box and the option itself may have changed
 
             // Every cached block was rendered with the previous settings.
             Redraw();
@@ -608,7 +609,45 @@ namespace MusicBeePlugin
             return clipped.Width > 0 && clipped.Height > 0 ? clipped : (RectangleF?)null;
         }
 
-        private int RestHeight() => Math.Max(_blockCurrent?.Height ?? 0, _heightHold);
+        private int RestHeight() => Math.Max(_blockCurrent?.Height ?? 0, Math.Max(_heightHold, FixedBox ? _songHeight : 0));
+
+        // ---- fixed box per song ----
+        // With the option on, the box is measured once per song as the largest any of its lines will need,
+        // and stays that size for the whole song.
+        private List<(string, string)> _songLines;
+        private RectangleF? _songBox;
+        private int _songHeight;
+
+        private bool FixedBox => _settings.FixedBoxPerSong && _songBox.HasValue;
+
+        /// <summary>Every (line 1, line 2) pair of the playing song, sent once per song by the plugin.</summary>
+        public void SetSongLines(List<(string, string)> lines)
+        {
+            if (PostToUiThread(() => SetSongLines(lines))) return;
+            _songLines = lines;
+            MeasureSong();
+            RepresentCurrent();
+        }
+
+        private void MeasureSong()
+        {
+            _songBox = null;
+            _songHeight = 0;
+            if (!_settings.FixedBoxPerSong || !_settings.BoxBackground || _songLines == null) return;
+            using (var g = CreateGraphics())
+            {
+                foreach (var (l1, l2) in _songLines)
+                {
+                    using (var block = l2 == null
+                               ? LyricsRenderer.Render1LineBlock(l1 ?? "", g, false, bakeBox: false)
+                               : LyricsRenderer.Render2LineBlock(l1 ?? "", l2, g, false, bakeBox: false))
+                    {
+                        _songBox = Union(_songBox, block.BoxRect);
+                        _songHeight = Math.Max(_songHeight, block.Base.Height);
+                    }
+                }
+            }
+        }
 
         private void ResetHold()
         {
