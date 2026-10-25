@@ -46,6 +46,8 @@ namespace MusicBeePlugin
         private CheckBox _chkRomaji;
         private CheckBox _chkCheckUpdates;
         private CheckBox _chkAutoInstall;
+        private CheckBox _chkWordHighlight;
+        private Button _btnHighlightColor;
 
         // Text opacity and a separate colour for the second line (romaji / translation).
         private void AddExtraOptions()
@@ -53,8 +55,8 @@ namespace MusicBeePlugin
             var table = (TableLayoutPanel)Controls["tableLayout"];
             table.SuspendLayout();
             var row = table.RowCount;
-            table.RowCount = row + 8;
-            for (var i = 0; i < 8; i++) table.RowStyles.Add(new RowStyle());
+            table.RowCount = row + 9;
+            for (var i = 0; i < 9; i++) table.RowStyles.Add(new RowStyle());
 
             var lblBox = new Label { Text = "Background:", AutoSize = true, Anchor = AnchorStyles.Left, Margin = label1Margin() };
             _chkBox = new CheckBox { Text = "Single padded box (uses background opacity)", AutoSize = true, Checked = _settings.BoxBackground, Anchor = AnchorStyles.Left };
@@ -152,6 +154,30 @@ namespace MusicBeePlugin
             table.Controls.Add(lblRomaji, 0, row + 6);
             table.Controls.Add(_chkRomaji, 1, row + 6);
 
+            var lblHighlight = new Label { Text = "Word highlight:", AutoSize = true, Anchor = AnchorStyles.Left, Margin = label1Margin() };
+            var hlFlow = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0) };
+            _chkWordHighlight = new CheckBox { Text = "Fill words as they are sung (word-timed .lrc)", AutoSize = true, Checked = _settings.WordHighlight, Anchor = AnchorStyles.Left };
+            _btnHighlightColor = new Button { Width = btnColor1.Width / 2, Height = btnColor1.Height, BackColor = _settings.HighlightColor, FlatStyle = btnColor1.FlatStyle, Enabled = _settings.WordHighlight };
+            _chkWordHighlight.CheckedChanged += (s, e) =>
+            {
+                _settings.WordHighlight = _chkWordHighlight.Checked;
+                _btnHighlightColor.Enabled = _chkWordHighlight.Checked;
+                SettingsChanged?.Invoke(this, _settings);
+            };
+            _btnHighlightColor.Click += (s, e) =>
+            {
+                _colorDialog.Color = _btnHighlightColor.BackColor;
+                var res = _colorDialog.ShowDialog();
+                if (res != DialogResult.OK && res != DialogResult.Yes) return;
+                _btnHighlightColor.BackColor = _colorDialog.Color;
+                _settings.HighlightColor = _colorDialog.Color;
+                SettingsChanged?.Invoke(this, _settings);
+            };
+            hlFlow.Controls.Add(_chkWordHighlight);
+            hlFlow.Controls.Add(_btnHighlightColor);
+            table.Controls.Add(lblHighlight, 0, row + 7);
+            table.Controls.Add(hlFlow, 1, row + 7);
+
             var lblUpdates = new Label { Text = "Updates (v" + Updater.CurrentVersion + "):", AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Left, Margin = new Padding(3, 8, 3, 3) };
             var updates = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0) };
             _chkCheckUpdates = new CheckBox { Text = "Check GitHub for new versions", AutoSize = true, Checked = _settings.CheckForUpdates };
@@ -167,8 +193,8 @@ namespace MusicBeePlugin
             updates.Controls.Add(_chkCheckUpdates);
             updates.Controls.Add(_chkAutoInstall);
             updates.Controls.Add(btnCheckNow);
-            table.Controls.Add(lblUpdates, 0, row + 7);
-            table.Controls.Add(updates, 1, row + 7);
+            table.Controls.Add(lblUpdates, 0, row + 8);
+            table.Controls.Add(updates, 1, row + 8);
 
             table.ResumeLayout(true);
 
@@ -295,6 +321,8 @@ namespace MusicBeePlugin
             _settings.BoxBackground = _chkBox.Checked;
             _settings.CheckForUpdates = _chkCheckUpdates.Checked;
             _settings.AutoInstallUpdates = _chkAutoInstall.Checked;
+            _settings.WordHighlight = _chkWordHighlight.Checked;
+            _settings.HighlightColor = _btnHighlightColor.BackColor;
         }
     }
 
