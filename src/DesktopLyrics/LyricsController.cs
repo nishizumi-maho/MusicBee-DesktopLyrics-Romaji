@@ -60,24 +60,10 @@ namespace MusicBeePlugin
             var nTime = time + _lyrics.Offset;
             var entries = _lyrics.Entries;
 
-            LyricParser.LyricEntry currentEntry = null;
-            LyricParser.LyricEntry nextEntry = null;
-
-            for (var i = 0; i < entries.Count; i++)
-            {
-                if (entries[i].TimeMs > nTime && i > 0)
-                {
-                    currentEntry = entries[i - 1];
-                    nextEntry = entries[i];
-                    break;
-                }
-            }
-
-            if (currentEntry == null)
-            {
-                if (entries.Count <= 0) return null;
-                currentEntry = entries[entries.Count - 1];
-            }
+            if (entries.Count <= 0) return null;
+            var index = SelectEntryIndex(entries, nTime, LeadInMs);
+            var currentEntry = entries[index];
+            var nextEntry = index + 1 < entries.Count ? entries[index + 1] : null;
 
             var view = _lyrics.HasTranslation || nextEntry == null || !NextLineWhenNoTranslation
                 ? new LyricView(currentEntry.LyricLine1, currentEntry.LyricLine2) { Segments2 = currentEntry.Segments2 }
@@ -85,6 +71,30 @@ namespace MusicBeePlugin
             view.Segments = currentEntry.Segments;
             view.OffsetMs = _lyrics.Offset;
             return view;
+        }
+
+        /// <summary>How early a word-timed line is put on screen, so its slide-in transition is over
+        /// before its first word is sung. Set from the transition duration (0 when transitions are off).</summary>
+        public double LeadInMs { get; set; }
+
+        /// <summary>Index of the entry to show at <paramref name="timeMs"/>. Plain lines switch exactly at
+        /// their time, as before. A word-timed line arrives <paramref name="leadInMs"/> early, but never
+        /// before the previous line's last word has been sung.</summary>
+        public static int SelectEntryIndex(IList<LyricParser.LyricEntry> entries, double timeMs, double leadInMs)
+        {
+            for (var i = 1; i < entries.Count; i++)
+                if (SwitchTime(entries[i - 1], entries[i], leadInMs) > timeMs)
+                    return i - 1;
+            return entries.Count - 1;
+        }
+
+        private static double SwitchTime(LyricParser.LyricEntry previous, LyricParser.LyricEntry next, double leadInMs)
+        {
+            if (next.Segments == null || leadInMs <= 0) return next.TimeMs;
+            var earliest = previous.Segments != null && previous.Segments.Count > 0
+                ? previous.Segments[previous.Segments.Count - 1].EndMs
+                : previous.TimeMs;
+            return Math.Min(next.TimeMs, Math.Max(earliest, next.TimeMs - leadInMs));
         }
 
         // Romaji support comes from RomajiCore.dll, which ships next to this plugin. If someone deletes it

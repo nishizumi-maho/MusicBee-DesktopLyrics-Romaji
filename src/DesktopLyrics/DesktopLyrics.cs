@@ -90,6 +90,7 @@ namespace MusicBeePlugin
             SaveSettings(_settings);
             LyricParser.PreserveSlash = _settings.PreserveSlash;
             _lyricsCtrl.NextLineWhenNoTranslation = _settings.NextLineWhenNoTranslation;
+            _lyricsCtrl.LeadInMs = LeadIn(_settings);
             var frm = _frmLyrics;
             frm?.Invoke(new Action(() =>
             {
@@ -154,6 +155,7 @@ namespace MusicBeePlugin
                         Application.EnableVisualStyles();
                         LyricParser.PreserveSlash = _settings.PreserveSlash;
                         _lyricsCtrl.NextLineWhenNoTranslation = _settings.NextLineWhenNoTranslation;
+                        _lyricsCtrl.LeadInMs = LeadIn(_settings);
                         try
                         {
                             // Throws once any window already exists in the host process; that must not
@@ -299,6 +301,11 @@ namespace MusicBeePlugin
             }
             ((Timer) sender).Start();
         }
+
+        // Word-timed lines arrive this early so the slide-in has finished when the first word is sung;
+        // the extra 100 ms covers the position poll interval.
+        private static double LeadIn(SettingsObj s) =>
+            s.SmoothScroll ? Math.Max(200, Math.Min(1500, s.SmoothScrollDuration)) + UpdateIntervalMs : UpdateIntervalMs;
 
         private string _line1, _line2;
         private void UpdateLyrics(bool force = false)
