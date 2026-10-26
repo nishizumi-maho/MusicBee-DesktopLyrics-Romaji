@@ -3,6 +3,25 @@
 All versions are based on Desktop Lyrics 1.10.1 by Charlie Jiang
 (<https://github.com/cqjjjzr/MusicBee-DesktopLyrics>).
 
+## 1.15.0 — 2026-10-26
+
+- New: **Lyrics Panel (BETA)** (View > Lyrics Panel (BETA)). A floating panel in the style of
+  MiniLyrics: borderless with rounded corners and a shadow, always on top and slightly translucent.
+  The whole song scrolls through it, with the current line lit word by word and the other lines
+  dimmed and fading at the edges. Hover it for a header with the song, smaller/bigger text,
+  opacity and close. Drag anywhere to move it and drag an edge to resize it. It reopens with
+  MusicBee until you close it.
+- New: word-by-word highlight for enhanced LRC files (`<mm:ss.xx>` word timing), with its own
+  colour. Romaji follows the same timing.
+- New: karaoke window (View > Desktop Lyrics Karaoke) with the whole song, fullscreen with F11.
+- New: continuous mode (two lines rolling up), an optional fixed box size per song, one continuous
+  box behind sliding lines, and a move tab for dragging the lyrics.
+- New: *Play the original lyric* setting. It plays `<song>.original.lrc` (the official lyric kept by
+  LYRICS BOCA) instead of the enhanced `.lrc` when that file has timing.
+- The lyrics clear during instrumental gaps instead of leaving the last line up.
+- Word-timed lines arrive early by the transition time, so the first word is not late.
+- Fixed: dragging the lyrics window no longer snaps it back to where it was a frame earlier.
+
 ## 1.14.1 — 2026-10-18
 
 - The update window now shows the release notes as plain text. It used to show the raw Markdown
