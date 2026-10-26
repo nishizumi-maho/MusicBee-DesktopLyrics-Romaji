@@ -32,6 +32,8 @@ namespace MusicBeePlugin
         private volatile SettingsObj _settings;
         private volatile FrmLyrics _frmLyrics;
         private volatile FrmKaraoke _frmKaraoke;
+        private volatile FrmLyricsPanel _frmPanel;
+        private bool _closing;
         private Timer _timer;
         private LyricsController _lyricsCtrl;
         private readonly object _lock = new object();
@@ -88,6 +90,7 @@ namespace MusicBeePlugin
             {
                 _frmLyrics?.UpdateFromSettings(settings);
                 _frmKaraoke?.UpdateFromSettings(settings);
+                _frmPanel?.UpdateFromSettings(settings);
             };
             settingsForm.UpdateCheckRequested += (sender, args) => CheckForUpdatesAsync(manual: true);
             settingsForm.ShowDialog();
@@ -96,6 +99,7 @@ namespace MusicBeePlugin
             LyricParser.PreserveSlash = _settings.PreserveSlash;
             _lyricsCtrl.NextLineWhenNoTranslation = _settings.NextLineWhenNoTranslation;
             _lyricsCtrl.Continuous = _settings.ContinuousMode;
+            _lyricsCtrl.PreferOriginal = _settings.PlayOriginalLyrics;
             _lyricsCtrl.LeadInMs = LeadIn(_settings);
             _songLyricsSent = null;   // "next line" mode may have changed which pairs are shown
             var frm = _frmLyrics;
@@ -136,6 +140,13 @@ namespace MusicBeePlugin
                 try { karaoke.Invoke(new Action(karaoke.Close)); }
                 catch (InvalidOperationException) { }
             }
+            var panel = _frmPanel;
+            if (panel != null && !panel.IsDisposed)
+            {
+                _closing = true;   // MusicBee is closing: the panel reopens next time
+                try { panel.Invoke(new Action(panel.Close)); }
+                catch (InvalidOperationException) { }
+            }
             SaveSettings(_settings);
         }
         
@@ -170,6 +181,7 @@ namespace MusicBeePlugin
                         LyricParser.PreserveSlash = _settings.PreserveSlash;
                         _lyricsCtrl.NextLineWhenNoTranslation = _settings.NextLineWhenNoTranslation;
                         _lyricsCtrl.Continuous = _settings.ContinuousMode;
+                        _lyricsCtrl.PreferOriginal = _settings.PlayOriginalLyrics;
                         _lyricsCtrl.LeadInMs = LeadIn(_settings);
                         try
                         {
@@ -184,6 +196,8 @@ namespace MusicBeePlugin
                         StartupMenuItem();
                         if (!_settings.HideOnStartup)
                             StartupForm();
+                        if (_settings.PanelOpen)
+                            OpenPanel();
 
                         if (_timer != null && _timer.Enabled) _timer.Enabled = false;
                         _timer = new Timer(UpdateIntervalMs) {AutoReset = false};
@@ -251,6 +265,8 @@ namespace MusicBeePlugin
             menuItem.Checked = !_settings.HideOnStartup;
             _mbApiInterface.MB_AddMenuItem("mnuView/Desktop Lyrics Karaoke", "Open the karaoke lyrics window.",
                                            (s, a) => OpenKaraoke());
+            _mbApiInterface.MB_AddMenuItem("mnuView/Lyrics Panel (BETA)", "Open the floating lyrics panel.",
+                                           (s, a) => OpenPanel());
             return;
 
             void ToggleLyrics(object sender, EventArgs args)
@@ -346,6 +362,62 @@ namespace MusicBeePlugin
             }
         }
 
+        /// <summary>Opens the lyrics panel (BETA), or brings it to the front. It reopens with MusicBee
+        /// until it is closed with its own button.</summary>
+        private void OpenPanel()
+        {
+            void Create()
+            {
+                var existing = _frmPanel;
+                if (existing != null && !existing.IsDisposed)
+                {
+                    existing.Activate();
+                    return;
+                }
+                var form = new FrmLyricsPanel(_settings);
+                form.FormClosed += (s, e) =>
+                {
+                    _frmPanel = null;
+                    if (!_closing) _settings.PanelOpen = false;
+                    SaveSettings(_settings);   // FormClosing stored the panel bounds in the settings
+                };
+                _frmPanel = form;
+                _panelLyricsSent = null;
+                _settings.PanelOpen = true;
+                SaveSettings(_settings);
+                form.Show();
+                lock (_lock) FeedPanel(form);
+            }
+
+            try
+            {
+                if (Control.FromHandle(_mbApiInterface.MB_GetWindowHandle()) is Form owner && owner.InvokeRequired)
+                    owner.Invoke(new Action(Create));
+                else
+                    Create();
+            }
+            catch (Exception e)
+            {
+                _mbApiInterface.MB_Trace(e.ToString());
+            }
+        }
+
+        private LyricParser.Lyrics _panelLyricsSent;
+
+        private void FeedPanel(FrmLyricsPanel panel)
+        {
+            var lyrics = _lyricsCtrl.CurrentLyrics;
+            if (!ReferenceEquals(lyrics, _panelLyricsSent) || _panelLyricsSent == null)
+            {
+                _panelLyricsSent = lyrics;
+                var title = _mbApiInterface.NowPlaying_GetFileTag(MetaDataType.TrackTitle);
+                var artist = _mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Artist);
+                panel.SetCaption(string.IsNullOrEmpty(artist) ? title : title + " — " + artist);
+                panel.SetLyrics(lyrics);
+            }
+            panel.SyncPlayback(_mbApiInterface.Player_GetPosition(), _mbApiInterface.Player_GetPlayState() == PlayState.Playing);
+        }
+
         private void TimerTick(object sender, ElapsedEventArgs args)
         {
             Debug.Assert(sender is Timer);
@@ -371,10 +443,12 @@ namespace MusicBeePlugin
         {
             lock (_lock)
             {
-                if (_frmLyrics == null && _frmKaraoke == null) return;
+                if (_frmLyrics == null && _frmKaraoke == null && _frmPanel == null) return;
                 var entry = _lyricsCtrl.UpdateLyrics(!_settings.HideWhenUnavailable);
                 var position = _mbApiInterface.Player_GetPosition();
                 var playing = _mbApiInterface.Player_GetPlayState() == PlayState.Playing;
+                var panel = _frmPanel;
+                if (panel != null) FeedPanel(panel);
                 // Both windows marshal these calls to their own thread.
                 var karaoke = _frmKaraoke;
                 if (karaoke != null)

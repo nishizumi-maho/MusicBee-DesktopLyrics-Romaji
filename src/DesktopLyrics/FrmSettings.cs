@@ -49,6 +49,7 @@ namespace MusicBeePlugin
         private CheckBox _chkCheckUpdates;
         private CheckBox _chkAutoInstall;
         private CheckBox _chkWordHighlight;
+        private ComboBox _cmbLyricVersion;
         private Button _btnHighlightColor;
 
         // Text opacity and a separate colour for the second line (romaji / translation).
@@ -192,6 +193,15 @@ namespace MusicBeePlugin
             };
             hlFlow.Controls.Add(_chkWordHighlight);
             hlFlow.Controls.Add(_btnHighlightColor);
+            _cmbLyricVersion = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 210, Anchor = AnchorStyles.Left };
+            _cmbLyricVersion.Items.AddRange(new object[] { "Play the enhanced lyric", "Play the original lyric" });
+            _cmbLyricVersion.SelectedIndex = _settings.PlayOriginalLyrics ? 1 : 0;
+            _cmbLyricVersion.SelectedIndexChanged += (s, e) =>
+            {
+                _settings.PlayOriginalLyrics = _cmbLyricVersion.SelectedIndex == 1;
+                SettingsChanged?.Invoke(this, _settings);
+            };
+            hlFlow.Controls.Add(_cmbLyricVersion);
             table.Controls.Add(lblHighlight, 0, row + 7);
             table.Controls.Add(hlFlow, 1, row + 7);
 
@@ -342,6 +352,7 @@ namespace MusicBeePlugin
             _settings.HighlightColor = _btnHighlightColor.BackColor;
             _settings.FixedBoxPerSong = _chkFixedBox.Checked;
             _settings.ContinuousMode = _chkContinuous.Checked;
+            _settings.PlayOriginalLyrics = _cmbLyricVersion.SelectedIndex == 1;
         }
     }
 
@@ -371,8 +382,14 @@ namespace MusicBeePlugin
         public Color HighlightColor = Color.FromArgb(0x50, 0xE6, 0xF0);
         public int KaraokeX = -1, KaraokeY = -1, KaraokeW = -1, KaraokeH = -1;   // karaoke window bounds
         public bool FixedBoxPerSong;            // single box sized to the song's largest line, for the whole song
+        public bool ShowMoveTab;                // small handle above the lyrics for dragging them
         public bool ContinuousMode;             // current + next line on screen, rolling up like a strip of paper
+        public bool PlayOriginalLyrics;         // "<song>.original.lrc" (official lyric) instead of the enhanced .lrc
         public bool KaraokeFullscreen;
+        public int PanelX = -1, PanelY = -1, PanelW = -1, PanelH = -1;   // lyrics panel (BETA) bounds
+        public int PanelOpacity = 90;           // percent
+        public float PanelFontScale = 1f;
+        public bool PanelOpen;                  // reopen the panel when MusicBee starts
         public string SkippedVersion;           // release tag the user chose to skip
         public int PosY = -1;
         public int PosX = -1;

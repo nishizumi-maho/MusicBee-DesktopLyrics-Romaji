@@ -17,6 +17,43 @@ namespace MusicBeePlugin
         /// instrumental gap shows only that upcoming line instead of clearing the screen.</summary>
         public bool Continuous { get; set; }
 
+        /// <summary>Play the official lyric LYRICS BOCA keeps in "&lt;song&gt;.original.lrc" instead of the
+        /// enhanced .lrc MusicBee loads. Songs without a timed original keep the enhanced one.</summary>
+        public bool PreferOriginal { get; set; }
+
+        public static string OriginalLyricsPath(string audioPath) =>
+            Path.Combine(Path.GetDirectoryName(audioPath) ?? "", Path.GetFileNameWithoutExtension(audioPath) + ".original.lrc");
+
+        public static string UsableOriginal(string text) =>
+            text != null && System.Text.RegularExpressions.Regex.IsMatch(text, @"^\[\d+:\d{2}", System.Text.RegularExpressions.RegexOptions.Multiline)
+                ? text : null;
+
+        private string _originalPath;
+        private DateTime _originalStamp;
+        private string _originalText;
+
+        // Called on every lyrics tick: the file is read again only when the song or the file changes.
+        private string ReadOriginal(string audioPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(audioPath)) return null;
+                var path = OriginalLyricsPath(audioPath);
+                var stamp = File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
+                if (path != _originalPath || stamp != _originalStamp)
+                {
+                    _originalPath = path;
+                    _originalStamp = stamp;
+                    _originalText = stamp == DateTime.MinValue ? null : UsableOriginal(File.ReadAllText(path));
+                }
+                return _originalText;
+            }
+            catch (Exception)   // unreadable file: play the enhanced lyric
+            {
+                return null;
+            }
+        }
+
         private readonly Plugin.MusicBeeApiInterface _interface;
         private string _lastLyrics;
         private bool _lastRomaji;
@@ -38,7 +75,8 @@ namespace MusicBeePlugin
             var hasLyrics = _interface.NowPlaying_GetFileTag(Plugin.MetaDataType.HasLyrics) ?? "";
             if (hasLyrics.StartsWith("Y")  || hasLyrics.Length == 0)
             {
-                var lyrics = _interface.NowPlaying_GetLyrics();
+                var lyrics = (PreferOriginal ? ReadOriginal(_interface.NowPlaying_GetFileUrl()) : null)
+                             ?? _interface.NowPlaying_GetLyrics();
                 var romajiOn = RomajiAvailable && RomajiEnabled();
                 if (lyrics != _lastLyrics || romajiOn != _lastRomaji)
                 {
