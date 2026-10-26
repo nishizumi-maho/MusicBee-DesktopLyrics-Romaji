@@ -22,7 +22,9 @@ namespace MusicBeePlugin
             if (hBitmap != IntPtr.Zero) GdiplusPInvoke.DeleteObject(hBitmap);
         }
 
-        public static void SetBitmap(Bitmap bitmap, byte opacity, IntPtr handle, int left, int top, int width, int height)
+        /// <summary>Pushes a frame to a layered window. The position is left alone: passing the form's
+        /// Left/Top here fought a window drag, snapping the window back to where it was a frame earlier.</summary>
+        public static void SetBitmap(Bitmap bitmap, byte opacity, IntPtr handle, int width, int height)
         {
             if (bitmap.PixelFormat != PixelFormat.Format32bppArgb)
                 throw new ApplicationException("The bitmap must be 32ppp with alpha-channel.");
@@ -39,7 +41,6 @@ namespace MusicBeePlugin
 
                 var size = new Size(width, height);
                 var pointSource = new Point(0, 0);
-                var topPos = new Point(left, top);
                 var blend = new BLENDFUNCTION
                 {
                     BlendOp = GdiplusPInvoke.AC_SRC_OVER,
@@ -51,7 +52,7 @@ namespace MusicBeePlugin
                 GdiplusPInvoke.UpdateLayeredWindow(
                     handle,
                     screenDc, 
-                    ref topPos,
+                    IntPtr.Zero,
                     ref size, 
                     memDc, 
                     ref pointSource, 

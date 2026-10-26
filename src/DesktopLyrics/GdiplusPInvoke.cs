@@ -55,6 +55,10 @@ namespace Gdiplus
         [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
         public static extern Bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref Point pptDst, ref Size psize, IntPtr hdcSrc, ref Point pprSrc, Int32 crKey, ref BLENDFUNCTION pblend, Int32 dwFlags);
 
+        // Same call with pptDst = NULL: the window keeps whatever position it has.
+        [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+        public static extern Bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, IntPtr pptDst, ref Size psize, IntPtr hdcSrc, ref Point pprSrc, Int32 crKey, ref BLENDFUNCTION pblend, Int32 dwFlags);
+
         [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
         public static extern IntPtr GetDC(IntPtr hWnd);
 

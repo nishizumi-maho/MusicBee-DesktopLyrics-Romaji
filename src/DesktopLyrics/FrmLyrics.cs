@@ -265,7 +265,7 @@ namespace MusicBeePlugin
                 if (Width != width) Width = width;
                 if (Height != viewHeight) Height = viewHeight;
 
-                GdiplusHelper.SetBitmap(frame, TextAlpha, Handle, Left, Top, Width, Height);
+                GdiplusHelper.SetBitmap(frame, TextAlpha, Handle, Width, Height);
             }
         }
 
@@ -335,6 +335,7 @@ namespace MusicBeePlugin
             if (_animating) return;   // an in-flight frame already carries the new alpha
             if (Continuous)
             {
+                InvalidatePaperRest();                      // the song's box or opacity may have changed
                 if (_paper.Count > 0) PresentPaperRest();   // draws the highlight too
                 _lastX1 = _lastX2 = -1;
                 return;
@@ -617,12 +618,13 @@ namespace MusicBeePlugin
         {
             if (x <= 0) return;
             var r = word.LineRects[line];
-            g.SetClip(new RectangleF(0, r.Top + offsetY, x, r.Height));
+            var state = g.Save();   // keeps any clip the caller set (continuous mode clips to the box)
+            g.SetClip(new RectangleF(0, r.Top + offsetY, x, r.Height), CombineMode.Intersect);
             if (alpha >= 0.996f) g.DrawImage(word.Highlight, 0, offsetY, w, h);
             else
                 using (var attributes = AlphaAttributes(alpha))
                     g.DrawImage(word.Highlight, new Rectangle(0, offsetY, w, h), 0, 0, w, h, GraphicsUnit.Pixel, attributes);
-            g.ResetClip();
+            g.Restore(state);
         }
 
         // ---- single-box background ----
@@ -732,6 +734,9 @@ namespace MusicBeePlugin
                 var menu = new ContextMenuStrip();
                 menu.Items.Add("Desktop Lyrics settings...", null, (s, a) => SettingsRequested?.Invoke(this, EventArgs.Empty));
                 menu.Items.Add("Open karaoke window", null, (s, a) => KaraokeRequested?.Invoke(this, EventArgs.Empty));
+                var tab = new ToolStripMenuItem("Show move tab") { Checked = _settings.ShowMoveTab };
+                tab.Click += (s, a) => SetMoveTab(!_settings.ShowMoveTab);
+                menu.Items.Add(tab);
                 var romaji = RomajiStateProvider?.Invoke();
                 if (romaji.HasValue)
                 {

@@ -28,9 +28,9 @@ namespace DesktopLyrics.Tests
             using (var frame = new Bitmap(400, 100, PixelFormat.Format32bppArgb))
             {
                 var handle = form.Handle;
-                GdiplusHelper.SetBitmap(frame, 255, handle, 0, 0, 400, 100);   // warm-up
+                GdiplusHelper.SetBitmap(frame, 255, handle, 400, 100);   // warm-up
                 var before = GetGuiResources(GetCurrentProcess(), 0);
-                for (var i = 0; i < 300; i++) GdiplusHelper.SetBitmap(frame, 255, handle, 0, 0, 400, 100);
+                for (var i = 0; i < 300; i++) GdiplusHelper.SetBitmap(frame, 255, handle, 400, 100);
                 var after = GetGuiResources(GetCurrentProcess(), 0);
                 Assert.True(after - before < 10, $"GDI objects grew by {after - before} over 300 frames");
             }

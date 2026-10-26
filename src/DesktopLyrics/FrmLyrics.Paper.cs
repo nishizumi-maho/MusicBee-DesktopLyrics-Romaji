@@ -43,6 +43,10 @@ namespace MusicBeePlugin
         private string _next1, _next2;          // the line under it
         private int _paperViewH;                // window height of the last frame pushed
         private int _paperH0, _paperH1;         // window height at the start and end of the roll
+        // The sheet at rest (box and lines, without the word highlight). While a line is being sung the
+        // highlight repaints it every frame, and blending the dimmed next line through a colour matrix
+        // each time made the UI thread too busy to follow a window drag.
+        private Bitmap _paperRest;
 
         private bool Continuous => _settings.ContinuousMode;
 
@@ -81,8 +85,15 @@ namespace MusicBeePlugin
             line.Word = null;
         }
 
+        private void InvalidatePaperRest()
+        {
+            _paperRest?.Dispose();
+            _paperRest = null;
+        }
+
         private void DisposePaper()
         {
+            InvalidatePaperRest();
             foreach (var line in _paper) line.Dispose();
             _paper.Clear();
             _paperTop = null;
@@ -112,6 +123,7 @@ namespace MusicBeePlugin
             }
             StopAnimationClock();
             _animating = false;
+            InvalidatePaperRest();
 
             var t1 = NullIfEmpty(_line1);
             var t2 = t1 == null ? null : NullIfEmpty(_line2);
@@ -209,6 +221,7 @@ namespace MusicBeePlugin
         {
             StopAnimationClock();
             _animating = false;
+            InvalidatePaperRest();
             for (var i = _paper.Count - 1; i >= 0; i--)
             {
                 var line = _paper[i];
@@ -236,30 +249,72 @@ namespace MusicBeePlugin
             foreach (var line in _paper) width = Math.Max(width, line.Bitmap?.Width ?? 0);
             if (width <= 0 || viewHeight <= 0) return;
 
+            var atRest = !_animating && p >= 1.0;
+            if (atRest && (_paperRest == null || _paperRest.Width != width || _paperRest.Height != viewHeight))
+            {
+                InvalidatePaperRest();
+                _paperRest = new Bitmap(width, viewHeight);
+                using (var g = Graphics.FromImage(_paperRest)) DrawSheet(g, 1.0, width, viewHeight, highlight: false);
+            }
+
             using (var frame = new Bitmap(width, viewHeight))
             {
                 using (var g = Graphics.FromImage(frame))
                 {
-                    g.CompositingMode = CompositingMode.SourceOver;
-                    var box = PaperBox(p, width, viewHeight);
-                    if (box.HasValue) LyricsRenderer.FillBox(g, box.Value);
-                    foreach (var line in _paper)
+                    if (atRest)
                     {
-                        if (line.Bitmap == null) continue;
-                        var y = (int)Math.Round(Lerp(line.Y0, line.Y1, p));
-                        var a = Lerp(line.A0, line.A1, p);
-                        if (a <= 0.004f || y >= viewHeight || y + line.Height <= 0) continue;
-                        DrawFaded(g, line.Bitmap, y, a);
-                        if (line == _paperTop && line.Word != null && _settings.WordHighlight)
-                            DrawHighlight(g, line.Word, y, line.Bitmap.Width, line.Bitmap.Height, a);
+                        g.CompositingMode = CompositingMode.SourceCopy;
+                        g.DrawImage(_paperRest, 0, 0, width, viewHeight);
+                        g.CompositingMode = CompositingMode.SourceOver;
+                        var top = _paperTop;
+                        if (top?.Word != null && top.Bitmap != null && _settings.WordHighlight)
+                            DrawHighlight(g, top.Word, (int)Math.Round(top.Y1), top.Bitmap.Width, top.Bitmap.Height, top.A1);
                     }
+                    else DrawSheet(g, p, width, viewHeight, highlight: true);
                 }
 
                 if (Width != width) Width = width;
                 if (Height != viewHeight) Height = viewHeight;
                 _paperViewH = viewHeight;
-                GdiplusHelper.SetBitmap(frame, TextAlpha, Handle, Left, Top, Width, Height);
+                GdiplusHelper.SetBitmap(frame, TextAlpha, Handle, Width, Height);
             }
+        }
+
+        private void DrawSheet(Graphics g, double p, int width, int viewHeight, bool highlight)
+        {
+            g.CompositingMode = CompositingMode.SourceOver;
+            var box = PaperBox(p, width, viewHeight);
+            if (box.HasValue) LyricsRenderer.FillBox(g, box.Value);
+            // Lines leave through the top edge of the box and come in through its bottom edge: nothing is
+            // drawn outside it. Without a box the same edges come from where the lines sit.
+            var clip = box ?? PaperRows(p, width, viewHeight);
+            if (clip.HasValue) g.SetClip(clip.Value);
+            foreach (var line in _paper)
+            {
+                if (line.Bitmap == null) continue;
+                var y = (int)Math.Round(Lerp(line.Y0, line.Y1, p));
+                var a = Lerp(line.A0, line.A1, p);
+                if (a <= 0.004f || y >= viewHeight || y + line.Height <= 0) continue;
+                DrawFaded(g, line.Bitmap, y, a);
+                if (highlight && line == _paperTop && line.Word != null && _settings.WordHighlight)
+                    DrawHighlight(g, line.Word, y, line.Bitmap.Width, line.Bitmap.Height, a);
+            }
+            g.ResetClip();
+        }
+
+        /// <summary>The band the lines occupy, moving from where they sat before the roll to where they
+        /// sit after it; null when there is no before or after.</summary>
+        private RectangleF? PaperRows(double p, int width, int viewHeight)
+        {
+            RectangleF? from = null, to = null;
+            foreach (var line in _paper)
+            {
+                if (line.A0 > 0) from = Union(from, new RectangleF(0, line.Y0, width, line.Height));
+                if (line.A1 > 0) to = Union(to, new RectangleF(0, line.Y1, width, line.Height));
+            }
+            if (!from.HasValue || !to.HasValue) return null;
+            return RectangleF.FromLTRB(0, Lerp(from.Value.Top, to.Value.Top, p),
+                                       width, Lerp(from.Value.Bottom, to.Value.Bottom, p));
         }
 
         /// <summary>One box behind the sheet, moving smoothly from the lines it covered before the roll
